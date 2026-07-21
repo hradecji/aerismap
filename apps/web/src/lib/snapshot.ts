@@ -49,6 +49,10 @@ function flatten(collection: StationCollection): StationCollection {
     if (values.humidity && Number.isFinite(values.humidity.v)) {
       extra['_humidity'] = values.humidity.v
     }
+    // Region bands (hotspot stations only) — flat for the contrast filter.
+    const rb = feature.properties.regionBands
+    if (rb?.n2 !== undefined) extra['_rb2'] = rb.n2
+    if (rb?.n3 !== undefined) extra['_rb3'] = rb.n3
     Object.assign(feature.properties, extra)
   }
   return collection

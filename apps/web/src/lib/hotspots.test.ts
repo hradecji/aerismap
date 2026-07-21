@@ -40,12 +40,25 @@ const collection = (...features: StationFeature[]): StationCollection => ({
 })
 
 describe('hotspotFilter', () => {
-  it('requires hotspot truthiness AND a band to color by', () => {
-    assert.deepEqual(hotspotFilter() as unknown, [
-      'all',
-      ['==', ['to-boolean', ['get', 'hotspot']], true],
-      ['has', 'eaqi'],
-    ])
+  it('requires hotspot truthiness, a band, and contrast over the displayed region level', () => {
+    for (const [level, rbKey] of [
+      ['n2', '_rb2'],
+      ['n3', '_rb3'],
+    ] as const) {
+      assert.deepEqual(hotspotFilter(level) as unknown, [
+        'all',
+        ['==', ['to-boolean', ['get', 'hotspot']], true],
+        ['has', 'eaqi'],
+        ['any', ['!', ['has', rbKey]], ['>', ['coalesce', ['get', 'eaqi'], 0], ['get', rbKey]]],
+      ])
+    }
+  })
+
+  it('keeps rings in uncolored regions (no region-band property → always shown)', () => {
+    // The ['!', ['has', rbKey]] arm is the no-data escape hatch — pinned by
+    // the structural assertion above; this test documents the intent.
+    const expr = hotspotFilter('n3') as unknown[]
+    assert.deepEqual((expr[3] as unknown[])[1], ['!', ['has', '_rb3']])
   })
 })
 
@@ -108,6 +121,6 @@ describe('collectionHasHotspots', () => {
 
 describe('legend line', () => {
   it('uses the ring glyph and names the corroboration', () => {
-    assert.equal(HOTSPOT_LEGEND_LABEL, '◉ corroborated hotspot')
+    assert.equal(HOTSPOT_LEGEND_LABEL, "◉ hotspot above its region's level")
   })
 })

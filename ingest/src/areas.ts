@@ -301,6 +301,7 @@ function buildStats(stations: readonly StationFeature[], now: Date): AreaStats {
  */
 export function buildAreas(collection: StationCollection, index: BoundaryIndex, now: Date): BuiltAreas {
   const byRegion = new Map<string, StationFeature[]>()
+  const hotspotAssignments: Array<[StationFeature, string]> = []
   let unassignedStations = 0
 
   for (const feature of collection.features) {
@@ -315,6 +316,7 @@ export function buildAreas(collection: StationCollection, index: BoundaryIndex, 
       unassignedStations++
       continue
     }
+    if (properties.hotspot) hotspotAssignments.push([feature, nuts3])
     // Set-dedupe: for spliced no-NUTS-3 countries (Bosnia) the assignment id
     // IS the NUTS-2 id — without the dedupe the station would count twice.
     for (const id of new Set([nuts3, nuts3.slice(0, 4)])) {
@@ -330,6 +332,19 @@ export function buildAreas(collection: StationCollection, index: BoundaryIndex, 
     const stats = buildStats(byRegion.get(id)!, now)
     areas[id] = stats
     if (stats.eaqi !== undefined) areasColored++
+  }
+
+  // Enrich hotspot stations with their regions' bands so the client can hide
+  // rings that merely repeat the fill color under them (contrast rule).
+  for (const [feature, nuts3] of hotspotAssignments) {
+    const n3 = areas[nuts3]?.eaqi
+    const n2 = areas[nuts3.slice(0, 4)]?.eaqi
+    if (n2 !== undefined || n3 !== undefined) {
+      feature.properties.regionBands = {
+        ...(n2 !== undefined ? { n2 } : {}),
+        ...(n3 !== undefined ? { n3 } : {}),
+      }
+    }
   }
 
   return {

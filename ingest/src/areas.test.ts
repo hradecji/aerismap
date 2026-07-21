@@ -222,6 +222,39 @@ describe('buildAreas', () => {
     expect(Object.keys(built.snapshot.areas)).toEqual(['AA01', 'AA011'])
   })
 
+  it('enriches hotspot stations with their region bands for the contrast rule', () => {
+    const hotspot = station('sensor-community:hot', 10.5, 50.5, {
+      values: { pm2_5: { v: 95, ts: FRESH_TS } },
+      eaqi: 5,
+      hotspot: true,
+    })
+    const built = buildAreas(
+      collect([
+        hotspot,
+        station('sensor-community:2', 10.6, 50.6, { values: { pm2_5: { v: 4, ts: FRESH_TS } } }),
+        station('sensor-community:3', 10.7, 50.7, { values: { pm2_5: { v: 6, ts: FRESH_TS } } }),
+      ]),
+      INDEX,
+      NOW
+    )
+    // AA011 median pm2_5 = 6 → band 2; the hotspot's marker must carry it.
+    expect(built.snapshot.areas['AA011']?.eaqi).toBe(2)
+    expect(hotspot.properties.regionBands).toEqual({ n2: 2, n3: 2 })
+  })
+
+  it('leaves hotspot stations unenriched when their regions publish no band', () => {
+    const hotspot = station('sensor-community:solo-hot', 20.2, 50.2, {
+      values: { pm2_5: { v: 95, ts: FRESH_TS } },
+      eaqi: 5,
+      hotspot: true,
+    })
+    const built = buildAreas(collect([hotspot]), INDEX, NOW)
+    // Single station claiming band 5: graduated gating publishes no region
+    // band, so there is nothing to contrast against — ring always shows.
+    expect(built.snapshot.areas['BB011']?.eaqi).toBeUndefined()
+    expect(hotspot.properties.regionBands).toBeUndefined()
+  })
+
   it('includes coarsened-coordinate stations', () => {
     const built = buildAreas(
       collect([station('sensor-community:1', 10.5, 50.5, { exactLocation: false })]),

@@ -52,9 +52,11 @@ import StationPopup from './StationPopup'
 
 const SOURCE_ID = 'stations'
 const LAYER_ID = 'station-circles'
-/** Hotspot ring/core pair — clicks/hover are handled on the ring (it spans the whole marker). */
+/** Hotspot ring/core pairs, zoom-split at the NUTS handoff for the contrast rule. */
 const HOTSPOT_RING = 'hotspot-ring'
 const HOTSPOT_CORE = 'hotspot-core'
+const HOTSPOT_RING_LAYERS = [HOTSPOT_RING, `${HOTSPOT_RING}-n3`]
+const HOTSPOT_LAYERS = [...HOTSPOT_RING_LAYERS, HOTSPOT_CORE, `${HOTSPOT_CORE}-n3`]
 
 const NUTS2_SOURCE = 'nuts2'
 const NUTS3_SOURCE = 'nuts3'
@@ -151,40 +153,51 @@ function ensureLayers(map: MapLibreMap) {
   lineSpec(NUTS2_LINE, NUTS2_SOURCE, { maxzoom: NUTS_SPLIT_ZOOM })
   lineSpec(NUTS3_LINE, NUTS3_SOURCE, { minzoom: NUTS_SPLIT_ZOOM })
 
-  // Hotspot overlay: above the fills, below the basemap labels, visible at
-  // every zoom. Renders nothing when no station carries hotspot=true.
-  if (!map.getLayer(HOTSPOT_RING)) {
-    map.addLayer(
-      {
-        id: HOTSPOT_RING,
-        type: 'circle',
-        source: SOURCE_ID,
-        filter: hotspotFilter(),
-        paint: {
-          'circle-radius': hotspotRingRadius(),
-          'circle-color': hotspotRingColor(),
-          'circle-opacity': 0.95,
-          'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 2.5,
+  // Hotspot overlay: above the fills, below the basemap labels, at every
+  // zoom — but split at the NUTS handoff so the contrast rule compares each
+  // ring against the region level actually displayed (NUTS-2 below the
+  // split, NUTS-3 above). Air Quality view only (gated in the view effect).
+  const hotspotPairs: Array<[string, 'n2' | 'n3', { maxzoom?: number; minzoom?: number }]> = [
+    [HOTSPOT_RING, 'n2', { maxzoom: NUTS_SPLIT_ZOOM }],
+    [`${HOTSPOT_RING}-n3`, 'n3', { minzoom: NUTS_SPLIT_ZOOM }],
+  ]
+  for (const [id, level, zoomRange] of hotspotPairs) {
+    if (!map.getLayer(id)) {
+      map.addLayer(
+        {
+          id,
+          type: 'circle',
+          source: SOURCE_ID,
+          filter: hotspotFilter(level),
+          ...zoomRange,
+          paint: {
+            'circle-radius': hotspotRingRadius(),
+            'circle-color': hotspotRingColor(),
+            'circle-opacity': 0.95,
+            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': 2.5,
+          },
         },
-      },
-      firstSymbolId
-    )
-  }
-  if (!map.getLayer(HOTSPOT_CORE)) {
-    map.addLayer(
-      {
-        id: HOTSPOT_CORE,
-        type: 'circle',
-        source: SOURCE_ID,
-        filter: hotspotFilter(),
-        paint: {
-          'circle-radius': hotspotCoreRadius(),
-          'circle-color': '#ffffff',
+        firstSymbolId
+      )
+    }
+    const coreId = id.replace(HOTSPOT_RING, HOTSPOT_CORE)
+    if (!map.getLayer(coreId)) {
+      map.addLayer(
+        {
+          id: coreId,
+          type: 'circle',
+          source: SOURCE_ID,
+          filter: hotspotFilter(level),
+          ...zoomRange,
+          paint: {
+            'circle-radius': hotspotCoreRadius(),
+            'circle-color': '#ffffff',
+          },
         },
-      },
-      firstSymbolId
-    )
+        firstSymbolId
+      )
+    }
   }
 
   if (!map.getLayer(LAYER_ID)) {
@@ -333,14 +346,16 @@ export default function MapView({ stations, view, kinds, showStale, areas, areaM
       })
 
       // Hotspot markers are interactive at ALL zooms — the ring spans the
-      // whole marker, so the pair needs handlers on the ring layer only.
-      map.on('mousemove', HOTSPOT_RING, () => {
-        map.getCanvas().style.cursor = 'pointer'
-      })
-      map.on('mouseleave', HOTSPOT_RING, () => {
-        map.getCanvas().style.cursor = ''
-      })
-      map.on('click', HOTSPOT_RING, openStationPopup)
+      // whole marker, so handlers go on both zoom-leveled ring layers.
+      for (const ringId of HOTSPOT_RING_LAYERS) {
+        map.on('mousemove', ringId, () => {
+          map.getCanvas().style.cursor = 'pointer'
+        })
+        map.on('mouseleave', ringId, () => {
+          map.getCanvas().style.cursor = ''
+        })
+        map.on('click', ringId, openStationPopup)
+      }
 
       // ---- Area interactions (hover emphasis via feature-state; popup) ----
       let hovered: { source: string; id: string | number } | null = null
@@ -373,7 +388,13 @@ export default function MapView({ stations, view, kinds, showStale, areas, areaM
         if (!areasInteractive()) return
         // Hotspot markers win at any zoom — their station popup must not be
         // replaced by the region popup underneath.
-        if (map.queryRenderedFeatures(e.point, { layers: [HOTSPOT_RING] }).length > 0) return
+        if (
+          map.queryRenderedFeatures(e.point, {
+            layers: HOTSPOT_RING_LAYERS.filter((l) => map.getLayer(l)),
+          }).length > 0
+        ) {
+          return
+        }
         // Station circles win whenever they're visible/interactive.
         if (
           stationsInteractive() &&
@@ -499,6 +520,16 @@ export default function MapView({ stations, view, kinds, showStale, areas, areaM
       if (map.getLayer(id)) map.setPaintProperty(id, 'fill-color', color)
     }
   }, [fillsShown, view, mapReady, styleEpoch])
+
+  // Hotspot rings are an EAQI-semantics marker: Air Quality view only.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const visibility = view.id === 'eaqi' ? 'visible' : 'none'
+    for (const id of HOTSPOT_LAYERS) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility)
+    }
+  }, [view, mapReady, styleEpoch])
 
   // Station circle styling; opacity picks up the crossfade when fills show.
   useEffect(() => {

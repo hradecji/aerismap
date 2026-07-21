@@ -71,6 +71,13 @@ export interface StationProperties {
    * Rendered as a prominent marker even at choropleth zooms.
    */
   hotspot?: boolean
+  /**
+   * EAQI bands of the regions this station sits in (n2 = NUTS-2 parent,
+   * n3 = NUTS-3), set only on hotspot stations: the client hides a ring
+   * whose band does not exceed the region color under it — a marker must
+   * carry surprise, not repeat the fill.
+   */
+  regionBands?: { n2?: EaqiBand; n3?: EaqiBand }
 }
 
 export interface PointGeometry {

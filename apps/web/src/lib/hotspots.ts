@@ -16,21 +16,26 @@ import { NEUTRAL_DOT } from './views'
  */
 
 /** Legend line, shown only when the loaded snapshot contains hotspots. */
-export const HOTSPOT_LEGEND_LABEL = '◉ corroborated hotspot'
+export const HOTSPOT_LEGEND_LABEL = "◉ hotspot above its region's level"
 
 /** MapLibre expression literals don't typecheck as arrays; one contained cast. */
 const asExpression = (e: unknown): ExpressionSpecification => e as ExpressionSpecification
 
 /**
- * Only corroborated hotspots that carry a band to color by. `hotspot` rides
- * the flattened-props pipeline as a plain boolean; to-boolean also tolerates
- * a stringified form defensively.
+ * Only corroborated hotspots that carry a band to color by, and — the
+ * contrast rule — only where that band EXCEEDS the region color under them
+ * at the displayed NUTS level ('n2' below the split zoom, 'n3' above). A
+ * ring that repeats the fill is noise; stations in uncolored/unassigned
+ * regions (no _rb* property) always show. `hotspot` rides the flattened
+ * pipeline as a plain boolean; to-boolean tolerates a stringified form.
  */
-export function hotspotFilter(): FilterSpecification {
+export function hotspotFilter(level: 'n2' | 'n3'): FilterSpecification {
+  const rbKey = level === 'n2' ? '_rb2' : '_rb3'
   return asExpression([
     'all',
     ['==', ['to-boolean', ['get', 'hotspot']], true],
     ['has', 'eaqi'],
+    ['any', ['!', ['has', rbKey]], ['>', ['coalesce', ['get', 'eaqi'], 0], ['get', rbKey]]],
   ]) as FilterSpecification
 }
 
