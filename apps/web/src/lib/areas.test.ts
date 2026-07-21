@@ -1,19 +1,19 @@
 /**
  * Pure-logic tests for area mode. Written against node:test so they run with
- * zero extra dependencies (apps/web has no test-runner dep):
+ * zero extra dependencies:
  *
- *   ../../ingest/node_modules/.bin/tsx --test src/lib/areas.test.ts
+ *   pnpm --filter @aerismap/web test
  *
- * (from apps/web; tsx only transpiles — assertions are node:assert/strict).
+ * (tsx only transpiles — assertions are node:assert/strict).
  */
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
-  AREA_MIN_POLLUTANT_STATIONS,
-  AREA_MIN_STATIONS,
+  AREA_FULL_CONFIDENCE_STATIONS,
   ATTRIBUTIONS,
   EAQI_BAND_COLORS,
   eaqiBandForValue,
+  regionBandAllowed,
   type AreaStats,
   type Attribution,
 } from '@aerismap/shared'
@@ -21,6 +21,7 @@ import {
   AREA_CROSSFADE_END,
   AREA_CROSSFADE_START,
   areaBandSummary,
+  areaConfidenceLabel,
   areaFillColor,
   areaFillOpacity,
   areaStateFor,
@@ -70,6 +71,16 @@ describe('NO_DATA_FILL', () => {
   })
 })
 
+describe('regionBandAllowed (shared contract as this app relies on it)', () => {
+  it('one sensor may say "fine", never "emergency"', () => {
+    assert.equal(regionBandAllowed(3, 1), true)
+    assert.equal(regionBandAllowed(4, 1), false)
+    assert.equal(regionBandAllowed(6, 1), false)
+    assert.equal(regionBandAllowed(6, 2), true)
+    assert.equal(regionBandAllowed(1, 0), true)
+  })
+})
+
 describe('areaStateFor', () => {
   it('exposes band, per-pollutant bands, temperature, and n for a full region', () => {
     const state = areaStateFor(fullStats)
@@ -80,38 +91,62 @@ describe('areaStateFor', () => {
     assert.equal(state.temp, 21.4)
   })
 
-  it('withholds everything except n below AREA_MIN_STATIONS', () => {
-    const state = areaStateFor({ ...fullStats, n: AREA_MIN_STATIONS - 1 })
-    assert.deepEqual(state, { n: AREA_MIN_STATIONS - 1 })
-  })
-
-  it('drops a pollutant measured by fewer than AREA_MIN_POLLUTANT_STATIONS stations', () => {
+  it('trusts a published band even from a single station', () => {
     const state = areaStateFor({
-      ...fullStats,
-      cnt: { ...fullStats.cnt, pm2_5: AREA_MIN_POLLUTANT_STATIONS - 1 },
+      eaqi: 2,
+      pollutant: 'pm2_5',
+      n: 1,
+      nRef: 0,
+      nCom: 1,
+      med: { pm2_5: 12 },
+      cnt: { pm2_5: 1 },
     })
-    assert.equal(state.b_pm2_5, undefined)
-    assert.equal(state.b_pm10, eaqiBandForValue('pm10', 30.1))
+    assert.equal(state.n, 1)
+    assert.equal(state.band, 2)
+    assert.equal(state.b_pm2_5, eaqiBandForValue('pm2_5', 12))
   })
 
-  it('keeps a pollutant at exactly AREA_MIN_POLLUTANT_STATIONS stations', () => {
-    const state = areaStateFor(fullStats)
-    assert.equal(state.b_o3, eaqiBandForValue('o3', 61))
+  it('emits no band when ingest withheld eaqi', () => {
+    const state = areaStateFor({ n: 1, nRef: 0, nCom: 1, med: { pm2_5: 120 }, cnt: { pm2_5: 1 } })
+    assert.equal('band' in state, false)
   })
 
-  it('drops a pollutant median that has no cnt entry at all', () => {
-    const state = areaStateFor({ ...fullStats, cnt: { temperature: 4 } })
-    assert.equal(state.b_pm2_5, undefined)
-    assert.equal(state.b_pm10, undefined)
+  it('lets one station set a pollutant band up to 3, never severe', () => {
+    const base = { n: 1, nRef: 0, nCom: 1 }
+    const fine = areaStateFor({ ...base, med: { pm2_5: 30 }, cnt: { pm2_5: 1 } })
+    assert.equal(fine.b_pm2_5, 3)
+    const severe = areaStateFor({ ...base, med: { pm2_5: 80 }, cnt: { pm2_5: 1 } })
+    assert.equal('b_pm2_5' in severe, false)
+  })
+
+  it('lets two stations set any pollutant band, severe included', () => {
+    const state = areaStateFor({ n: 2, nRef: 0, nCom: 2, med: { pm2_5: 200 }, cnt: { pm2_5: 2 } })
+    assert.equal(state.b_pm2_5, 6)
+  })
+
+  it('treats a missing cnt entry as zero: low bands pass, severe are withheld', () => {
+    const base = { n: 4, nRef: 0, nCom: 4 }
+    const low = areaStateFor({ ...base, med: { pm2_5: 30 } })
+    assert.equal(low.b_pm2_5, 3)
+    const severe = areaStateFor({ ...base, med: { pm2_5: 100 } })
+    assert.equal('b_pm2_5' in severe, false)
+  })
+
+  it('temperature and humidity need only one counted station', () => {
+    const state = areaStateFor({
+      n: 1,
+      nRef: 0,
+      nCom: 1,
+      med: { temperature: 21.4, humidity: 61.5 },
+      cnt: { temperature: 1, humidity: 1 },
+    })
     assert.equal(state.temp, 21.4)
+    assert.equal(state.hum, 61.5)
   })
 
-  it('applies the same station-count gate to temperature', () => {
-    const state = areaStateFor({
-      ...fullStats,
-      cnt: { ...fullStats.cnt, temperature: AREA_MIN_POLLUTANT_STATIONS - 1 },
-    })
-    assert.equal(state.temp, undefined)
+  it('withholds temperature with no counted stations at all', () => {
+    const state = areaStateFor({ n: 1, nRef: 0, nCom: 1, med: { temperature: 21.4 } })
+    assert.equal('temp' in state, false)
   })
 
   it('handles a stats object with no medians', () => {
@@ -129,20 +164,46 @@ describe('areaBandSummary', () => {
     })
   })
 
-  it('reports too few stations for a missing entry', () => {
-    assert.deepEqual(areaBandSummary(null), { kind: 'too-few-stations', n: 0 })
-  })
-
-  it('reports too few stations below the threshold, even if a band sneaks in', () => {
+  it('reports the band even for one- and two-station regions', () => {
+    assert.deepEqual(areaBandSummary({ ...fullStats, n: 1 }), {
+      kind: 'band',
+      band: 3,
+      pollutant: 'pm2_5',
+    })
     assert.deepEqual(areaBandSummary({ ...fullStats, n: 2 }), {
-      kind: 'too-few-stations',
-      n: 2,
+      kind: 'band',
+      band: 3,
+      pollutant: 'pm2_5',
     })
   })
 
-  it('reports missing pollutant coverage when enough stations but no band', () => {
-    const stats: AreaStats = { n: 6, nRef: 0, nCom: 6, med: { temperature: 12 } }
+  it('reports too few stations only when none are included', () => {
+    assert.deepEqual(areaBandSummary(null), { kind: 'too-few-stations', n: 0 })
+    assert.deepEqual(areaBandSummary({ n: 0, nRef: 0, nCom: 0 }), {
+      kind: 'too-few-stations',
+      n: 0,
+    })
+  })
+
+  it('reports missing coverage when stations exist but ingest published no band', () => {
+    const stats: AreaStats = { n: 1, nRef: 0, nCom: 1, med: { temperature: 12 } }
     assert.deepEqual(areaBandSummary(stats), { kind: 'no-pollutant-coverage' })
+  })
+})
+
+describe('areaConfidenceLabel', () => {
+  it('speaks confidence for one and two stations, plain counts above', () => {
+    assert.equal(areaConfidenceLabel(null), 'No stations included')
+    assert.equal(areaConfidenceLabel({ n: 0, nRef: 0, nCom: 0 }), 'No stations included')
+    assert.equal(
+      areaConfidenceLabel({ n: 1, nRef: 0, nCom: 1 }),
+      'Single station (0 official, 1 community) — low confidence'
+    )
+    assert.equal(
+      areaConfidenceLabel({ n: 2, nRef: 1, nCom: 1 }),
+      'Two stations (1 official, 1 community)'
+    )
+    assert.equal(areaConfidenceLabel(fullStats), '8 stations (3 official, 5 community)')
   })
 })
 
@@ -248,15 +309,15 @@ describe('paint expressions', () => {
     assert.equal(expr[3], NO_DATA_FILL)
   })
 
-  it('areaStateFor emits hum only with enough humidity stations', () => {
+  it('areaStateFor emits hum from a single counted humidity station', () => {
     const base = { n: 5, nRef: 0, nCom: 5 }
-    const enough = areaStateFor({ ...base, med: { humidity: 61.5 }, cnt: { humidity: 4 } })
-    assert.equal(enough['hum'], 61.5)
-    const tooFew = areaStateFor({ ...base, med: { humidity: 61.5 }, cnt: { humidity: 1 } })
-    assert.equal('hum' in tooFew, false)
+    const one = areaStateFor({ ...base, med: { humidity: 61.5 }, cnt: { humidity: 1 } })
+    assert.equal(one['hum'], 61.5)
+    const uncounted = areaStateFor({ ...base, med: { humidity: 61.5 } })
+    assert.equal('hum' in uncounted, false)
   })
 
-  it('fill opacity crossfades on zoom around a station-count confidence ramp', () => {
+  it('fill opacity crossfades on zoom around the graduated confidence ramp', () => {
     const expr = areaFillOpacity() as unknown[]
     assert.deepEqual(expr.slice(0, 3), ['interpolate', ['linear'], ['zoom']])
     assert.equal(expr[3], AREA_CROSSFADE_START)
@@ -264,13 +325,21 @@ describe('paint expressions', () => {
       'interpolate',
       ['linear'],
       ['coalesce', ['feature-state', 'n'], 0],
-      AREA_MIN_STATIONS,
+      1,
+      0.3,
+      2,
+      0.4,
+      AREA_FULL_CONFIDENCE_STATIONS,
       0.45,
       10,
       0.85,
     ])
     assert.equal(expr[5], AREA_CROSSFADE_END)
     assert.equal(expr[6], 0)
+  })
+
+  it('the graduated ramp low end stays below full confidence', () => {
+    assert.ok(AREA_FULL_CONFIDENCE_STATIONS > 2, 'full confidence starts above two stations')
   })
 
   it('circle opacity passes through untouched when fills are off', () => {

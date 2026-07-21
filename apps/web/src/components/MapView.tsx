@@ -15,7 +15,6 @@ import {
   BOUNDARY_ASSETS,
   type AreaSnapshot,
   type StationCollection,
-  type StationProperties,
 } from '@aerismap/shared'
 import {
   AREA_CROSSFADE_END,
@@ -34,6 +33,13 @@ import {
 } from '../lib/areas'
 import { BASEMAP_STYLE, INITIAL_CENTER, INITIAL_ZOOM } from '../lib/config'
 import {
+  hotspotCoreRadius,
+  hotspotFilter,
+  hotspotRingColor,
+  hotspotRingRadius,
+} from '../lib/hotspots'
+import { parseStationProps } from '../lib/stationProps'
+import {
   buildFilter,
   circleRadius,
   circleSortKey,
@@ -46,6 +52,9 @@ import StationPopup from './StationPopup'
 
 const SOURCE_ID = 'stations'
 const LAYER_ID = 'station-circles'
+/** Hotspot ring/core pair — clicks/hover are handled on the ring (it spans the whole marker). */
+const HOTSPOT_RING = 'hotspot-ring'
+const HOTSPOT_CORE = 'hotspot-core'
 
 const NUTS2_SOURCE = 'nuts2'
 const NUTS3_SOURCE = 'nuts3'
@@ -79,26 +88,13 @@ const STROKE_WIDTH = [
   1.5,
 ] as unknown as DataDrivenPropertyValueSpecification<number>
 
-/** Nested objects come back from queryRenderedFeatures as JSON strings. */
-function parseStationProps(raw: Record<string, unknown>): StationProperties {
-  let values: StationProperties['values'] = {}
-  try {
-    if (typeof raw.values === 'string') {
-      values = JSON.parse(raw.values) as StationProperties['values']
-    } else if (raw.values && typeof raw.values === 'object') {
-      values = raw.values as StationProperties['values']
-    }
-  } catch {
-    // corrupt values blob: render the popup without readings
-  }
-  return { ...(raw as unknown as StationProperties), values }
-}
-
 /**
  * Add sources and layers, idempotently — runs on first load and again after
  * any style reload (which wipes user sources/layers). Area layers are
  * inserted below the basemap's first symbol layer so positron labels stay on
- * top; the station circle layer keeps its historic slot at the very top.
+ * top; the hotspot ring/core pair goes in after them (above the fills, still
+ * below labels); the station circle layer keeps its historic slot at the
+ * very top.
  */
 function ensureLayers(map: MapLibreMap) {
   if (!map.getSource(NUTS2_SOURCE)) {
@@ -154,6 +150,42 @@ function ensureLayers(map: MapLibreMap) {
   fillSpec(NUTS3_FILL, NUTS3_SOURCE, { minzoom: NUTS_SPLIT_ZOOM })
   lineSpec(NUTS2_LINE, NUTS2_SOURCE, { maxzoom: NUTS_SPLIT_ZOOM })
   lineSpec(NUTS3_LINE, NUTS3_SOURCE, { minzoom: NUTS_SPLIT_ZOOM })
+
+  // Hotspot overlay: above the fills, below the basemap labels, visible at
+  // every zoom. Renders nothing when no station carries hotspot=true.
+  if (!map.getLayer(HOTSPOT_RING)) {
+    map.addLayer(
+      {
+        id: HOTSPOT_RING,
+        type: 'circle',
+        source: SOURCE_ID,
+        filter: hotspotFilter(),
+        paint: {
+          'circle-radius': hotspotRingRadius(),
+          'circle-color': hotspotRingColor(),
+          'circle-opacity': 0.95,
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2.5,
+        },
+      },
+      firstSymbolId
+    )
+  }
+  if (!map.getLayer(HOTSPOT_CORE)) {
+    map.addLayer(
+      {
+        id: HOTSPOT_CORE,
+        type: 'circle',
+        source: SOURCE_ID,
+        filter: hotspotFilter(),
+        paint: {
+          'circle-radius': hotspotCoreRadius(),
+          'circle-color': '#ffffff',
+        },
+      },
+      firstSymbolId
+    )
+  }
 
   if (!map.getLayer(LAYER_ID)) {
     map.addLayer({
@@ -284,8 +316,7 @@ export default function MapView({ stations, view, kinds, showStale, areas, areaM
         map.getCanvas().style.cursor = ''
       })
 
-      map.on('click', LAYER_ID, (e) => {
-        if (!stationsInteractive()) return
+      const openStationPopup = (e: MapLayerMouseEvent) => {
         const feature = e.features?.[0]
         if (!feature || feature.geometry.type !== 'Point') return
         const [lng, lat] = feature.geometry.coordinates
@@ -294,7 +325,22 @@ export default function MapView({ stations, view, kinds, showStale, areas, areaM
           <StationPopup station={parseStationProps(feature.properties)} now={Date.now()} />,
           [lng, lat]
         )
+      }
+
+      map.on('click', LAYER_ID, (e) => {
+        if (!stationsInteractive()) return
+        openStationPopup(e)
       })
+
+      // Hotspot markers are interactive at ALL zooms — the ring spans the
+      // whole marker, so the pair needs handlers on the ring layer only.
+      map.on('mousemove', HOTSPOT_RING, () => {
+        map.getCanvas().style.cursor = 'pointer'
+      })
+      map.on('mouseleave', HOTSPOT_RING, () => {
+        map.getCanvas().style.cursor = ''
+      })
+      map.on('click', HOTSPOT_RING, openStationPopup)
 
       // ---- Area interactions (hover emphasis via feature-state; popup) ----
       let hovered: { source: string; id: string | number } | null = null
@@ -325,6 +371,9 @@ export default function MapView({ stations, view, kinds, showStale, areas, areaM
       }
       const onAreaClick = (e: MapLayerMouseEvent) => {
         if (!areasInteractive()) return
+        // Hotspot markers win at any zoom — their station popup must not be
+        // replaced by the region popup underneath.
+        if (map.queryRenderedFeatures(e.point, { layers: [HOTSPOT_RING] }).length > 0) return
         // Station circles win whenever they're visible/interactive.
         if (
           stationsInteractive() &&

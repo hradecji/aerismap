@@ -116,7 +116,13 @@ describe('buildSnapshot', () => {
     expect(meta.generatedAt).toBe(NOW.toISOString())
     expect(meta.eaqiBandSet).toBe('eaqi-2025')
     expect(meta.maxAgeSec).toEqual(MAX_AGE_SEC)
-    expect(meta.counts).toEqual({ stations: 1, byKind: { community: 1 }, withEaqi: 1 })
+    expect(meta.counts).toEqual({
+      stations: 1,
+      byKind: { community: 1 },
+      withEaqi: 1,
+      qcFlaggedStations: 0,
+      hotspots: 0,
+    })
     expect(meta.sources).toEqual([
       { id: 'sensor-community', ok: true, fetchedAt: NOW.toISOString(), stations: 1 },
       { id: 'openaq', ok: false, detail: 'OPENAQ_API_KEY not set; official layer skipped' },
@@ -157,6 +163,47 @@ describe('buildSnapshot', () => {
     expect(collection.features[0]!.properties.eaqi).toBeUndefined()
     expect(collection.features[0]!.properties.values.pm2_5?.v).toBe(12)
     expect(meta.counts.withEaqi).toBe(0)
+  })
+
+  it('applies spatial QC before the counts: a railed sensor is flagged and loses its EAQI', () => {
+    const ts = '2026-07-21T11:50:00Z'
+    // 0.1° lat ≈ 11 km — three clean neighbors well within the 50 km radius
+    const railed = communityDraft({
+      id: 'sensor-community:900',
+      nativeId: '900',
+      values: { pm2_5: { v: 500, ts } },
+    })
+    const cleans = [1, 2, 3].map((i) =>
+      communityDraft({
+        id: `sensor-community:90${i}`,
+        nativeId: `90${i}`,
+        lat: 48.53 + i * 0.1,
+        values: { pm2_5: { v: 10, ts } },
+      })
+    )
+    const { collection, meta } = buildSnapshot([asResult([railed, ...cleans])], NOW)
+    const byId = new Map(collection.features.map((f) => [f.properties.id, f.properties]))
+    expect(byId.get('sensor-community:900')!.qc).toEqual(['pm2_5'])
+    expect(byId.get('sensor-community:900')!.eaqi).toBeUndefined() // only scoreable reading flagged
+    expect(byId.get('sensor-community:900')!.values.pm2_5?.v).toBe(500) // popup still shows it
+    expect(byId.get('sensor-community:901')!.qc).toBeUndefined()
+    expect(meta.counts.qcFlaggedStations).toBe(1)
+    expect(meta.counts.withEaqi).toBe(3) // counted AFTER the QC recompute
+    expect(meta.counts.hotspots).toBe(0)
+  })
+
+  it('promotes a lone reference station at band ≥ 4 to hotspot and counts it', () => {
+    const reference = communityDraft({
+      id: 'openaq:1',
+      source: 'openaq',
+      nativeId: '1',
+      kind: 'reference',
+      license: 'per-source (OpenAQ/EEA)',
+      values: { no2: { v: 70, ts: '2026-07-21T11:50:00Z' } }, // band 4
+    })
+    const { collection, meta } = buildSnapshot([asResult([reference], 'openaq')], NOW)
+    expect(collection.features[0]!.properties.hotspot).toBe(true)
+    expect(meta.counts.hotspots).toBe(1)
   })
 
   it('flags pmHumidityBias only when PM coincides with humidity ≥ 95%', () => {
@@ -246,6 +293,8 @@ describe('buildSnapshot carry-forward', () => {
       stations: 3,
       byKind: { reference: 2, community: 1 },
       withEaqi: 3,
+      qcFlaggedStations: 0,
+      hotspots: 0,
     })
     const openaqStatus = meta.sources.find((s) => s.id === 'openaq') as IngestSourceStatus
     expect(openaqStatus.ok).toBe(false)

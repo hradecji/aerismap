@@ -128,7 +128,10 @@ async function main(): Promise<number> {
   const kinds = Object.entries(counts.byKind)
     .map(([kind, n]) => `${kind} ${n}`)
     .join(', ')
-  console.log(`[ingest] snapshot: ${counts.stations} stations (${kinds}); ${counts.withEaqi} with EAQI`)
+  console.log(
+    `[ingest] snapshot: ${counts.stations} stations (${kinds}); ${counts.withEaqi} with EAQI; ` +
+      `${counts.qcFlaggedStations} qc-flagged, ${counts.hotspots} hotspots`
+  )
   for (const line of ciWarningAnnotations(snapshot.meta.sources)) {
     console.log(line)
   }

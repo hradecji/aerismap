@@ -126,7 +126,7 @@ The brief assumed the point API; the research killed that: hourly polling of a ~
 Aggregates the station snapshot into Eurostat NUTS regions so low zoom reads as a regional choropleth instead of ~10k overlapping dots. Decisions (locked 2026-07-21):
 
 - **Region set: NUTS-2 + NUTS-3** from GISCO NUTS-2024 1:20M, with a **zoom handoff at ~z5.5** (NUTS-2 below, NUTS-3 above). The **UK is spliced in from NUTS-2021** (it left the NUTS-2024 release). Kept properties per feature: `NUTS_ID`, `LEVL_CODE`, `NAME_LATN`, `CNTR_CODE`.
-- **Semantics: median → band → worst pollutant.** Per region, take the per-pollutant *median* across included stations (stale excluded; PM readings from `pmHumidityBias` stations excluded; coarsened-coordinate stations included), band each median with eaqi-2025, and color by the worst-banded pollutant. **Honesty thresholds:** no color below `AREA_MIN_STATIONS = 3` included stations, and a pollutant only competes with ≥ `AREA_MIN_POLLUTANT_STATIONS = 2` contributing stations. Fill opacity encodes confidence (station count).
+- **Semantics: median → band → worst pollutant.** Per region, take the per-pollutant *median* across included stations (stale excluded; PM readings from `pmHumidityBias` stations excluded; QC-flagged readings excluded — §5.6; coarsened-coordinate stations included), band each median with eaqi-2025, and color by the worst-banded pollutant. **Honesty gating (revised 2026-07-21 — §5.6):** the original hard cliff (`AREA_MIN_STATIONS = 3` / `AREA_MIN_POLLUTANT_STATIONS = 2`, both exports since removed) is replaced by graduated gating: a pollutant with even a single QC-passed contributing station may color a region in bands ≤ 3 (`regionBandAllowed`), a pollutant with exactly two stations takes its band from the *min* of the pair (`AREA_TWO_STATION_RULE`), and a region is colored if any pollutant passes. Fill opacity still encodes confidence (station count, full at `AREA_FULL_CONFIDENCE_STATIONS = 3`).
 - **UX: auto areas→dots crossfade.** No layer toggle — zooming in fades the choropleth out and the station circles in, so the handoff is continuous and the per-station detail is never more than a zoom away.
 
 Architecture: the boundary GeoJSONs are **immutable static assets** (`/boundaries/nuts2.geojson`, `/boundaries/nuts3.geojson`, ~450 KB gz total), prepared once by `ingest/scripts/prepare-boundaries.ts` and vendored into the repo — they never touch KV or the hourly job. The hourly ingest publishes only the *values*: `latest/areas.json.gz` (~9 KB gz — `AreaSnapshot`, one flat map keyed by `NUTS_ID`), served at `GET /api/v1/areas`. The frontend joins values onto geometry client-side via MapLibre **feature-state** (`promoteId: 'NUTS_ID'`), so an hourly refresh moves ~9 KB, not ~450 KB.
@@ -134,6 +134,31 @@ Architecture: the boundary GeoJSONs are **immutable static assets** (`/boundarie
 Coverage gaps (accepted): NUTS covers the EU/EFTA/candidate space, so **UA has no subnational regions and RU/BY/AM/MD/GE are absent entirely — ≈ 320 stations render dots-only** there at every zoom. **LAU/municipality-level areas are explicitly deferred to the custom-domain milestone**: ~98k polygons are far beyond inline GeoJSON and require PMTiles on R2 (measured 48.5 MB at z4–z10) — which now also **requires enabling R2 (payment card) — revisit only if that stance changes** (§1 D1) — and only pays off once a custom domain enables edge caching (§10).
 
 Licensing: the GISCO download agreement makes the notice **"© EuroGeographics for the administrative boundaries"** mandatory and the data non-commercial; the notice must stay visible in the app wherever the area layer renders (it is in the shared `ATTRIBUTIONS` block).
+
+### 5.6 Sensor QC & graduated confidence (validated + shipped 2026-07-21)
+
+**The incident.** A batch of railed SDS011 sensors stuck at ~1000 µg/m³ painted **DE403, ITH2 and ITH20 "Extremely poor"**: each region had only two contributing PM stations, so a two-value median (the midpoint of the pair) let a single broken sensor drag the region band to the top of the scale. The §5.5 honesty thresholds were built against *sparse* data, not *wrong* data — this incident showed the pipeline needed an explicit quality gate.
+
+**Validation method.** Three candidate flagging statistics were implemented **twice, independently**, run against live data, and reconciled by a judge pass. The band-distance candidate (flag a station whose EAQI band sits ≥ N bands above its neighbors') was **disqualified empirically**: co-broken sensors cluster geographically and corroborate each other's bands, so it caught only **24/111** railed pm2_5 sensors. The ratio-to-neighborhood-median statistic won on every axis and is what shipped.
+
+**The adopted rule** (`QC_RULE` in `packages/shared/src/contracts.ts`; applied per pollutant to `pm2_5` and `pm10`): a reading *x* is flagged when
+
+> *x* > **4 ×** median(same-pollutant readings of *other* stations within **50 km** haversine, fresh within the community staleness horizon) **AND** *x* > **25 µg/m³**,
+
+computable only with **≥ 3 neighbors** — with fewer, the station is *unflaggable* (no evidence either way, not a pass). Evidence from the validation run: catches **109/111** railed pm2_5 and **4/4** railed pm10 sensors, heals the DE403/ITH2/ITH20 false purples, **~2.8%** overall flag rate, **~91%** short-term flag stability, **zero false hotspots**. Flagged params are listed in `StationProperties.qc`; flagged readings are **excluded from station EAQI and from region medians** but stay present in `values` so popups can show them with a warning.
+
+**Companion rules** (same contracts file):
+
+- **Min-of-two banding** (`AREA_TWO_STATION_RULE = 'min'`): when a region pollutant has exactly 2 contributing stations, its band comes from the *min* of the two values (the published `med` stays the median). One liar can't paint a region.
+- **Graduated gating** (`regionBandAllowed(band, cnt)`): `cnt ≥ 2` always allowed; `cnt == 1` allowed only for bands ≤ 3 — *one sensor may say "fine", never "emergency"*. A region is colored if **any** pollutant passes, so n ≥ 1 now suffices; removing the ≥3-station cliff lights up **~385 previously-blank regions**, rendered faint via the opacity ramp (full confidence at `AREA_FULL_CONFIDENCE_STATIONS = 3`).
+- **Hotspot promotion** (`HOTSPOT_MIN_BAND = 4`): a station gets `properties.hotspot = true` when its worst **unflagged** pollutant band is ≥ 4 **and** either `kind === 'reference'` or ≥ 1 neighbor within 50 km has a fresh same-pollutant reading within 1 EAQI band. Corroborated epicenters stay prominently visible even at choropleth zooms — QC removes liars without hiding real events.
+
+**Residual risks (from the judge; accepted):**
+
+1. **Winter smog is analytically argued, empirically untested.** Broad genuine elevation lifts the neighborhood median, so the 4× ratio shouldn't flag it — but the rule was validated in July; the first winter-smog episode is the real test.
+2. **Flag churn at the 25 µg/m³ frontier**: ~10–14% of flags flip between consecutive runs where readings hover near the floor/ratio boundary. Cosmetic at hourly cadence; hysteresis (e.g. flag at 4×, unflag at 3×) is a possible future refinement (§10).
+3. **2 railed sensors are structurally unflaggable** (0–1 neighbors within 50 km). Defense in depth bounds the damage: alone in a region, graduated gating blocks severe bands (cnt 1, band > 3); with one companion, min-of-two banding overrides it; their dots still render railed, which is honest.
+4. **Possible suppression of real hyper-local events** in the 25–50 µg/m³ gray zone: a genuine plume confined to one station that reads > 4× its neighbors gets flagged like a broken sensor. The reading remains visible in the popup (with the warning), so the information is dimmed, not destroyed.
 
 ---
 
@@ -170,6 +195,7 @@ Licensing: the GISCO download agreement makes the notice **"© EuroGeographics f
 5. **workers.dev 100k req/day + 429 cliff** — fine at hobby scale; the upgrade path (custom domain → Cache API/cache rules → near-zero origin hits) is additive, no redesign.
 6. **KV free-plan write cap (1,000 writes/day)** — the hourly job uses ~120/day (5 keys × 24 runs), so only a runaway retry loop or heavy manual re-running could approach it. Over-cap writes fail for the rest of the UTC day; the Worker keeps serving the last stored artifacts (stale-but-visible, same degradation mode as risk 1) and no bill is possible — there is no card on the account. Mitigation: no unbounded upload retries in ingest; freshness banner surfaces the stall.
 7. **Double-counting** across community networks — moot until openSenseMap is added; then dedup by coordinate proximity.
+8. **Spatial-QC residuals (§5.6)** — winter-smog behavior of `QC_RULE` is argued, not yet observed (first winter is the empirical test); ~10–14% flag churn at the 25 µg/m³ frontier (hysteresis scoped in §10); 2 railed sensors structurally unflaggable with 0–1 neighbors (graduated gating + min-of-two banding bound their region damage); genuine hyper-local events in the 25–50 µg/m³ gray zone can be flagged as sensor faults (reading stays visible in the popup with the warning). Mitigation for all four: the rule lives in one shared constant (`QC_RULE`) and re-validation against live data is cheap to rerun.
 
 ---
 
@@ -190,3 +216,5 @@ Licensing: the GISCO download agreement makes the notice **"© EuroGeographics f
 - PMTiles Europe extract size check (basemap fallback readiness; the R2 caveat above applies to that fallback too).
 - EAQI band cross-check against EEA primary docs (pre-launch task, M1).
 - `.om` reader licence decision (M2).
+- **QC hysteresis** at the flag frontier (§5.6 residual 2): asymmetric thresholds (e.g. flag at 4×, unflag at 3×) would cut the observed ~10–14% run-to-run flag churn; needs a small state carry between ingest runs (previous flag set in KV) — take up only if churn proves user-visible.
+- **Winter re-validation of `QC_RULE`** (§5.6 residual 1): rerun the two-implementation + judge evaluation on live data during the first sustained winter-smog episode; adjust `ratioThreshold`/`floorUgM3` only with equivalent evidence to the July run.

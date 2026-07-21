@@ -11,6 +11,7 @@ import {
   type StationFeature,
   type StationKind,
 } from '@aerismap/shared'
+import { applySpatialQc } from './qc'
 import type { IngestSourceStatus, SourceResult } from './types'
 
 export interface Snapshot {
@@ -110,6 +111,11 @@ export function buildSnapshot(
   // Plain code-unit comparison: byte-deterministic across runtimes, unlike localeCompare.
   features.sort((a, b) => (a.properties.id < b.properties.id ? -1 : a.properties.id > b.properties.id ? 1 : 0))
 
+  // Spatial QC + hotspot promotion runs on the full merged snapshot (carried-
+  // forward stations included) BEFORE the counts below and before area
+  // aggregation downstream, so both see post-QC eaqi/qc/hotspot properties.
+  const qc = applySpatialQc(features, now)
+
   const byKind: Partial<Record<StationKind, number>> = {}
   let withEaqi = 0
   for (const feature of features) {
@@ -123,7 +129,13 @@ export function buildSnapshot(
       generatedAt: now.toISOString(),
       eaqiBandSet: EAQI_BAND_SET,
       maxAgeSec: MAX_AGE_SEC,
-      counts: { stations: features.length, byKind, withEaqi },
+      counts: {
+        stations: features.length,
+        byKind,
+        withEaqi,
+        qcFlaggedStations: qc.qcFlaggedStations,
+        hotspots: qc.hotspots,
+      },
       sources,
       attribution: ATTRIBUTIONS,
     },

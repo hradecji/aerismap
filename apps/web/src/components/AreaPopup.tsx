@@ -1,12 +1,10 @@
 import {
-  AREA_MIN_POLLUTANT_STATIONS,
-  AREA_MIN_STATIONS,
   AREA_PARAMS,
   EAQI_BAND_COLORS,
   EAQI_BAND_NAMES,
   type AreaStats,
 } from '@aerismap/shared'
-import { areaBandSummary, BOUNDARY_NOTICE } from '../lib/areas'
+import { areaBandSummary, areaConfidenceLabel, BOUNDARY_NOTICE } from '../lib/areas'
 import { PARAM_LABELS, PARAM_UNITS, formatValue } from '../lib/format'
 
 interface AreaPopupProps {
@@ -32,11 +30,7 @@ export default function AreaPopup({ nutsId, name, level, stats }: AreaPopupProps
           {nutsId}
           {level !== undefined ? ` · NUTS ${level}` : ''}
         </div>
-        <div className="popupMeta">
-          {stats
-            ? `${stats.n} station${stats.n === 1 ? '' : 's'} (${stats.nRef} official, ${stats.nCom} community)`
-            : 'No stations included'}
-        </div>
+        <div className="popupMeta">{areaConfidenceLabel(stats)}</div>
       </div>
 
       {summary.kind === 'band' && (
@@ -54,13 +48,11 @@ export default function AreaPopup({ nutsId, name, level, stats }: AreaPopupProps
         </div>
       )}
       {summary.kind === 'too-few-stations' && (
-        <div className="popupNote">
-          Not enough stations ({summary.n} of {AREA_MIN_STATIONS} needed).
-        </div>
+        <div className="popupNote">No stations reported fresh data in this region.</div>
       )}
       {summary.kind === 'no-pollutant-coverage' && (
         <div className="popupNote">
-          No pollutant measured by at least {AREA_MIN_POLLUTANT_STATIONS} stations.
+          No pollutant band met the confidence rules — severe bands need at least two stations.
         </div>
       )}
 

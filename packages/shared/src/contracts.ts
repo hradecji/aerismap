@@ -58,10 +58,38 @@ export const BOUNDARY_ASSETS = {
   nuts3: '/boundaries/nuts3.geojson',
 } as const
 
-/** A region is colored only with ≥3 included stations… */
-export const AREA_MIN_STATIONS = 3
-/** …and only by a pollutant measured by ≥2 of them. */
-export const AREA_MIN_POLLUTANT_STATIONS = 2
+/**
+ * Spatial-QC rule (empirically validated 2026-07-21 against live data by two
+ * independent evaluations + judge; see plan §5.6): a PM reading is flagged
+ * when it exceeds ratioThreshold × the median of same-pollutant readings
+ * from other stations within radiusKm AND exceeds floorUgM3. Stations with
+ * fewer than minNeighbors candidates are unflaggable (no evidence either way).
+ */
+export const QC_RULE = {
+  radiusKm: 50,
+  minNeighbors: 3,
+  ratioThreshold: 4,
+  floorUgM3: 25,
+  params: ['pm2_5', 'pm10'] as const,
+} as const
+
+/**
+ * Graduated region gating (decided 2026-07-21, replacing the hard ≥3-station
+ * cliff): a QC-passed reading from even a single station may color a region
+ * in the low bands, but severe bands demand corroboration — one sensor may
+ * say "fine", never "emergency".
+ */
+export function regionBandAllowed(band: EaqiBandLike, cnt: number): boolean {
+  return cnt >= 2 || band <= 3
+}
+type EaqiBandLike = 1 | 2 | 3 | 4 | 5 | 6
+
+/** Opacity anchor: regions reach full confidence rendering at this count. */
+export const AREA_FULL_CONFIDENCE_STATIONS = 3
+/** With exactly two stations, band from the MIN of the two (one liar can't paint a region). */
+export const AREA_TWO_STATION_RULE = 'min' as const
+/** Hotspot promotion: band ≥ 4, reading unflagged, corroborated within one band (or reference-kind). */
+export const HOTSPOT_MIN_BAND = 4
 
 export interface SourceStatus {
   id: SourceId
@@ -93,6 +121,10 @@ export interface SnapshotMeta {
     areasColored?: number
     /** Total NUTS regions in the published boundary set. */
     areasTotal?: number
+    /** Stations with ≥1 spatial-QC-flagged reading (see QC_RULE; absent before QC mode). */
+    qcFlaggedStations?: number
+    /** Stations promoted to corroborated hotspots (see HOTSPOT_MIN_BAND). */
+    hotspots?: number
   }
   sources: SourceStatus[]
   attribution: Attribution[]
@@ -103,11 +135,13 @@ export const AREA_PARAMS = ['pm2_5', 'pm10', 'no2', 'o3', 'so2', 'temperature', 
 export type AreaParam = (typeof AREA_PARAMS)[number]
 
 /**
- * Hourly per-region aggregate. Semantics (decided 2026-07-21): per-pollutant
- * MEDIAN across included stations (stale stations excluded; PM readings from
- * pmHumidityBias stations excluded; coarsened-coordinate stations included),
- * each median banded with eaqi-2025, region band = worst pollutant that has
- * ≥ AREA_MIN_POLLUTANT_STATIONS stations; no color below AREA_MIN_STATIONS.
+ * Hourly per-region aggregate. Semantics (updated 2026-07-21 with QC +
+ * graduated gating): per-pollutant MEDIAN across included stations (stale
+ * stations, qc-flagged readings, and pmHumidityBias PM excluded; coarsened
+ * coordinates included), each median banded with eaqi-2025; band eligibility
+ * per pollutant follows regionBandAllowed (cnt ≥ 2 always, a single station
+ * only for bands ≤ 3), with exactly two stations banding from the MIN of the
+ * pair; region band = worst eligible pollutant.
  */
 export interface AreaStats {
   /** Region band, absent when below the honesty thresholds. */

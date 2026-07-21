@@ -57,6 +57,20 @@ export interface StationProperties {
    * for this station may be inflated (plan §5.1: flag, don't correct).
    */
   pmHumidityBias?: boolean
+  /**
+   * Params whose readings failed spatial QC (validated 2026-07-21: value
+   * > 4× the same-pollutant neighborhood median within 50 km, ≥3 neighbors,
+   * and > 25 µg/m³ — the signature of a railed/stuck sensor). Flagged
+   * readings stay visible in popups but are excluded from station EAQI and
+   * region aggregation.
+   */
+  qc?: Param[]
+  /**
+   * Corroborated pollution epicenter: band ≥ 4 from an unflagged reading,
+   * backed by a neighbor within one band (or reference-grade pedigree).
+   * Rendered as a prominent marker even at choropleth zooms.
+   */
+  hotspot?: boolean
 }
 
 export interface PointGeometry {

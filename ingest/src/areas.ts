@@ -2,12 +2,11 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { gunzipSync } from 'node:zlib'
 import {
-  AREA_MIN_POLLUTANT_STATIONS,
-  AREA_MIN_STATIONS,
   AREA_PARAMS,
   eaqiBandForValue,
   EAQI_POLLUTANTS,
   MAX_AGE_SEC,
+  regionBandAllowed,
   type AreaParam,
   type AreaSnapshot,
   type AreaStats,
@@ -228,6 +227,8 @@ function buildStats(stations: readonly StationFeature[], now: Date): AreaStats {
   let nCom = 0
   const med: Partial<Record<AreaParam, number>> = {}
   const cnt: Partial<Record<AreaParam, number>> = {}
+  /** Raw included values per param, kept for the two-station min rule. */
+  const valuesByParam: Partial<Record<AreaParam, number[]>> = {}
   let hasParams = false
 
   for (const param of AREA_PARAMS) {
@@ -237,6 +238,9 @@ function buildStats(stations: readonly StationFeature[], now: Date): AreaStats {
       // PM optics over-read in near-saturated air — drop this station's PM
       // medians contribution; its other params still count (plan §5.1).
       if (properties.pmHumidityBias && (param === 'pm2_5' || param === 'pm10')) continue
+      // Spatial-QC-flagged readings (railed/stuck sensors, see qc.ts) are
+      // excluded too — the two exclusions compose, either suffices.
+      if (properties.qc?.includes(param)) continue
       const reading = properties.values[param]
       if (!reading) continue
       // Same freshness rule the snapshot EAQI uses: readings past the
@@ -248,6 +252,7 @@ function buildStats(stations: readonly StationFeature[], now: Date): AreaStats {
     if (values.length > 0) {
       med[param] = median1(values)
       cnt[param] = values.length
+      valuesByParam[param] = values
       hasParams = true
     }
   }
@@ -263,25 +268,27 @@ function buildStats(stations: readonly StationFeature[], now: Date): AreaStats {
     stats.cnt = cnt
   }
 
-  // Region band: each EAQI-pollutant median banded, worst wins — but only
-  // among pollutants measured by ≥ AREA_MIN_POLLUTANT_STATIONS stations, and
-  // only when the region has ≥ AREA_MIN_STATIONS stations at all (honesty
-  // thresholds). Ties keep the first pollutant in EAQI_POLLUTANTS order
+  // Region band (graduated gating, decided 2026-07-21 — the old ≥3-station
+  // cliff is gone): each EAQI pollutant is banded and the worst ALLOWED band
+  // wins. Per-pollutant banding value: with exactly two contributing stations
+  // the MIN of the two (AREA_TWO_STATION_RULE — one liar can't paint a
+  // region; the published med stays the median), otherwise the published
+  // median. regionBandAllowed then gates by count: cnt ≥ 2 always allowed,
+  // cnt == 1 only for bands ≤ 3 — one sensor may say "fine", never
+  // "emergency". Ties keep the first pollutant in EAQI_POLLUTANTS order
   // (strict >, mirroring shared computeEaqi).
-  if (stations.length >= AREA_MIN_STATIONS) {
-    let worst: { band: EaqiBand; pollutant: EaqiPollutant } | undefined
-    for (const pollutant of EAQI_POLLUTANTS) {
-      const value = med[pollutant]
-      if (value === undefined || (cnt[pollutant] ?? 0) < AREA_MIN_POLLUTANT_STATIONS) continue
-      const band = eaqiBandForValue(pollutant, value)
-      if (band !== undefined && (worst === undefined || band > worst.band)) {
-        worst = { band, pollutant }
-      }
-    }
-    if (worst) {
-      stats.eaqi = worst.band
-      stats.pollutant = worst.pollutant
-    }
+  let worst: { band: EaqiBand; pollutant: EaqiPollutant } | undefined
+  for (const pollutant of EAQI_POLLUTANTS) {
+    const values = valuesByParam[pollutant]
+    if (!values) continue
+    const bandValue = values.length === 2 ? Math.min(values[0]!, values[1]!) : med[pollutant]!
+    const band = eaqiBandForValue(pollutant, bandValue)
+    if (band === undefined || !regionBandAllowed(band, values.length)) continue
+    if (worst === undefined || band > worst.band) worst = { band, pollutant }
+  }
+  if (worst) {
+    stats.eaqi = worst.band
+    stats.pollutant = worst.pollutant
   }
   return stats
 }

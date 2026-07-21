@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   API_PATHS,
-  AREA_MIN_POLLUTANT_STATIONS,
-  AREA_MIN_STATIONS,
+  AREA_FULL_CONFIDENCE_STATIONS,
   AREA_PARAMS,
   ATTRIBUTIONS,
   EAQI_BAND_COLORS,
   EAQI_POLLUTANTS,
   eaqiBandForValue,
+  regionBandAllowed,
   type AreaParam,
   type AreaSnapshot,
   type AreaStats,
@@ -50,34 +50,34 @@ export function viewHasAreaFills(_id: ViewId): boolean {
 const asExpression = (e: unknown): ExpressionSpecification => e as ExpressionSpecification
 
 /**
- * Feature-state payload for one region, honesty thresholds applied
- * client-side: nothing view-colorable below AREA_MIN_STATIONS, and a
- * per-param value only when ≥ AREA_MIN_POLLUTANT_STATIONS stations measured
- * it. Keys: `band` (region EAQI), `b_<pollutant>` (band of the pollutant
- * median), `temp`/`hum` (median temperature / relative humidity), `n`
- * (station count, drives opacity).
+ * Feature-state payload for one region, graduated confidence applied
+ * client-side (2026-07-21, replacing the hard ≥3-station cliff):
+ * - `band` is emitted whenever ingest published `eaqi` — the published band
+ *   already encodes the graduated rules (QC exclusion, min-of-two,
+ *   regionBandAllowed), so trust it.
+ * - `b_<pollutant>` (band of the pollutant median) passes through the shared
+ *   regionBandAllowed gate: any count for bands ≤ 3, ≥ 2 stations for severe
+ *   bands — one sensor may say "fine", never "emergency".
+ * - `temp`/`hum` are not health claims: any single finite median suffices.
+ * - `n` (station count) drives the opacity confidence ramp.
  */
 export function areaStateFor(stats: AreaStats): Record<string, number> {
   const state: Record<string, number> = { n: stats.n }
-  if (stats.n < AREA_MIN_STATIONS) return state
-  // Trust but verify: ingest omits eaqi below thresholds, keep the gate anyway.
   if (stats.eaqi !== undefined) state['band'] = stats.eaqi
   for (const p of EAQI_POLLUTANTS) {
     const med = stats.med?.[p]
-    if (med === undefined || (stats.cnt?.[p] ?? 0) < AREA_MIN_POLLUTANT_STATIONS) continue
+    if (med === undefined) continue
     const band = eaqiBandForValue(p, med)
-    if (band !== undefined) state[`b_${p}`] = band
+    if (band !== undefined && regionBandAllowed(band, stats.cnt?.[p] ?? 0)) {
+      state[`b_${p}`] = band
+    }
   }
   for (const [param, key] of [
     ['temperature', 'temp'],
     ['humidity', 'hum'],
   ] as const) {
     const med = stats.med?.[param]
-    if (
-      med !== undefined &&
-      Number.isFinite(med) &&
-      (stats.cnt?.[param] ?? 0) >= AREA_MIN_POLLUTANT_STATIONS
-    ) {
+    if (med !== undefined && Number.isFinite(med) && (stats.cnt?.[param] ?? 0) >= 1) {
       state[key] = med
     }
   }
@@ -119,16 +119,22 @@ export function areaFillColor(id: ViewId): ExpressionSpecification | null {
 
 /**
  * Confidence encoding × zoom crossfade. Opacity interpolates on station
- * count (AREA_MIN_STATIONS → 0.45, 10+ → 0.85), then fades to 0 across the
- * crossfade window. Regions without state coalesce to n=0 and clamp to the
- * low stop — the no-data gray stays readable.
+ * count — the graduated low end whispers (n=1 → 0.30, n=2 → 0.40), full
+ * confidence starts at AREA_FULL_CONFIDENCE_STATIONS (0.45) and tops out at
+ * 10+ (0.85) — then fades to 0 across the crossfade window. Regions without
+ * state coalesce to n=0 and clamp to the low stop — the no-data gray stays
+ * readable.
  */
 export function areaFillOpacity(): DataDrivenPropertyValueSpecification<number> {
   const confidence = [
     'interpolate',
     ['linear'],
     ['coalesce', ['feature-state', 'n'], 0],
-    AREA_MIN_STATIONS,
+    1,
+    0.3,
+    2,
+    0.4,
+    AREA_FULL_CONFIDENCE_STATIONS,
     0.45,
     10,
     0.85,
@@ -203,14 +209,34 @@ export type AreaBandSummary =
   | { kind: 'too-few-stations'; n: number }
   | { kind: 'no-pollutant-coverage' }
 
+/**
+ * Graduated gating (2026-07-21): a single station may carry a band now, so
+ * 'too-few-stations' only means "no stations at all". A region with stations
+ * but no published band either lacks pollutant coverage or its only band
+ * failed the corroboration rule — the client can't tell which, so one
+ * honest message covers both.
+ */
 export function areaBandSummary(stats: AreaStats | null | undefined): AreaBandSummary {
-  if (!stats || stats.n < AREA_MIN_STATIONS) {
+  if (!stats || stats.n < 1) {
     return { kind: 'too-few-stations', n: stats?.n ?? 0 }
   }
   if (stats.eaqi === undefined) return { kind: 'no-pollutant-coverage' }
   return stats.pollutant !== undefined
     ? { kind: 'band', band: stats.eaqi, pollutant: stats.pollutant }
     : { kind: 'band', band: stats.eaqi }
+}
+
+/**
+ * Region-popup station-count line with confidence wording by n. Whether the
+ * shown band used the min-of-two rule is not knowable client-side, so this
+ * never claims it — counts and confidence only.
+ */
+export function areaConfidenceLabel(stats: AreaStats | null | undefined): string {
+  if (!stats || stats.n < 1) return 'No stations included'
+  const split = `${stats.nRef} official, ${stats.nCom} community`
+  if (stats.n === 1) return `Single station (${split}) — low confidence`
+  if (stats.n === 2) return `Two stations (${split})`
+  return `${stats.n} stations (${split})`
 }
 
 /**

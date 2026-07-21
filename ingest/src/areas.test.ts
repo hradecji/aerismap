@@ -3,9 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import {
-  AREA_MIN_POLLUTANT_STATIONS,
-  AREA_MIN_STATIONS,
   MAX_AGE_SEC,
+  regionBandAllowed,
   type StationCollection,
   type StationFeature,
   type StationProperties,
@@ -285,39 +284,145 @@ describe('buildAreas', () => {
     expect(reference.cnt?.pm2_5).toBe(1) // same age, still fresh for reference
   })
 
-  it('omits eaqi below AREA_MIN_STATIONS even when a pollutant has enough stations', () => {
-    expect(AREA_MIN_STATIONS).toBe(3)
-    const built = buildAreas(
-      collect([
-        station('sensor-community:1', 10.5, 50.5, { values: { pm2_5: { v: 100, ts: FRESH_TS } } }),
-        station('sensor-community:2', 10.6, 50.6, { values: { pm2_5: { v: 100, ts: FRESH_TS } } }),
-      ]),
-      INDEX,
-      NOW
-    )
-    const aa011 = built.snapshot.areas['AA011']!
-    expect(aa011.n).toBe(2)
-    expect(aa011.cnt?.pm2_5).toBe(2)
-    expect(aa011.eaqi).toBeUndefined()
-    expect(aa011.pollutant).toBeUndefined()
-    expect(aa011.med?.pm2_5).toBe(100) // stats still published
+  it('graduated gating truth table: one station may say "fine" (band ≤ 3), never "emergency"', () => {
+    // shared gate, pinned: cnt ≥ 2 always allowed; cnt == 1 only bands ≤ 3
+    expect(regionBandAllowed(2, 1)).toBe(true)
+    expect(regionBandAllowed(3, 1)).toBe(true)
+    expect(regionBandAllowed(4, 1)).toBe(false)
+    expect(regionBandAllowed(5, 1)).toBe(false)
+    expect(regionBandAllowed(6, 2)).toBe(true)
+
+    const single = (v: number) =>
+      buildAreas(
+        collect([station('sensor-community:1', 10.5, 50.5, { values: { pm2_5: { v, ts: FRESH_TS } } })]),
+        INDEX,
+        NOW
+      ).snapshot.areas['AA011']!
+
+    const band2 = single(10) // cnt 1 × band 2 → colors (the ≥3 cliff is gone)
+    expect(band2.eaqi).toBe(2)
+    expect(band2.pollutant).toBe('pm2_5')
+
+    const band3 = single(50) // cnt 1 × band 3 → still allowed
+    expect(band3.eaqi).toBe(3)
+
+    const band4 = single(60) // cnt 1 × band 4 → blocked
+    expect(band4.eaqi).toBeUndefined()
+    expect(band4.pollutant).toBeUndefined()
+    expect(band4.med?.pm2_5).toBe(60) // stats still published for n ≥ 1
+
+    const band5 = single(100) // cnt 1 × band 5 → blocked
+    expect(band5.eaqi).toBeUndefined()
+    expect(band5.cnt?.pm2_5).toBe(1)
   })
 
-  it('omits eaqi when no pollutant reaches AREA_MIN_POLLUTANT_STATIONS', () => {
-    expect(AREA_MIN_POLLUTANT_STATIONS).toBe(2)
+  it('two-station rule: band from the MIN of the two values, published med unchanged', () => {
     const built = buildAreas(
       collect([
-        station('sensor-community:1', 10.5, 50.5, { values: { pm2_5: { v: 100, ts: FRESH_TS } } }),
-        station('sensor-community:2', 10.6, 50.6, { values: { pm10: { v: 100, ts: FRESH_TS } } }),
-        station('sensor-community:3', 10.7, 50.7, { values: { no2: { v: 100, ts: FRESH_TS } } }),
+        station('sensor-community:1', 10.5, 50.5, { values: { pm2_5: { v: 10, ts: FRESH_TS } } }),
+        station('sensor-community:2', 10.6, 50.6, { values: { pm2_5: { v: 999, ts: FRESH_TS } } }),
       ]),
       INDEX,
       NOW
     )
     const aa011 = built.snapshot.areas['AA011']!
-    expect(aa011.n).toBe(3)
+    expect(aa011.med?.pm2_5).toBe(504.5) // median stays the published med
+    expect(aa011.cnt?.pm2_5).toBe(2)
+    expect(aa011.eaqi).toBe(2) // band from min(10, 999) — one liar can't paint a region
+    expect(aa011.pollutant).toBe('pm2_5')
+  })
+
+  it('two-station rule still shows emergency when BOTH stations corroborate it', () => {
+    const built = buildAreas(
+      collect([
+        station('sensor-community:1', 10.5, 50.5, { values: { pm2_5: { v: 150, ts: FRESH_TS } } }),
+        station('sensor-community:2', 10.6, 50.6, { values: { pm2_5: { v: 200, ts: FRESH_TS } } }),
+      ]),
+      INDEX,
+      NOW
+    )
+    // min(150, 200) = 150 → band 6, allowed at cnt 2
+    expect(built.snapshot.areas['AA011']!.eaqi).toBe(6)
+  })
+
+  it('a blocked single-sensor severe band does not stop an allowed pollutant from coloring', () => {
+    const built = buildAreas(
+      collect([
+        // pm2_5 cnt 1 at band 5 (blocked); no2 cnt 2 min 30 → band 3 (allowed)
+        station('sensor-community:1', 10.5, 50.5, {
+          values: { pm2_5: { v: 100, ts: FRESH_TS }, no2: { v: 30, ts: FRESH_TS } },
+        }),
+        station('sensor-community:2', 10.6, 50.6, { values: { no2: { v: 35, ts: FRESH_TS } } }),
+      ]),
+      INDEX,
+      NOW
+    )
+    const aa011 = built.snapshot.areas['AA011']!
+    expect(aa011.eaqi).toBe(3)
+    expect(aa011.pollutant).toBe('no2')
+    expect(aa011.med?.pm2_5).toBe(100) // the blocked value stays visible in stats
+  })
+
+  it('excludes qc-flagged readings from medians and counts, keeping other params', () => {
+    const built = buildAreas(
+      collect([
+        station('sensor-community:railed', 10.5, 50.5, {
+          qc: ['pm2_5'],
+          values: { pm2_5: { v: 999, ts: FRESH_TS }, no2: { v: 30, ts: FRESH_TS } },
+        }),
+        station('sensor-community:2', 10.6, 50.6, {
+          values: { pm2_5: { v: 10, ts: FRESH_TS }, no2: { v: 34, ts: FRESH_TS } },
+        }),
+      ]),
+      INDEX,
+      NOW
+    )
+    const aa011 = built.snapshot.areas['AA011']!
+    expect(aa011.n).toBe(2) // the station still counts, only its flagged reading is dropped
+    expect(aa011.med?.pm2_5).toBe(10)
+    expect(aa011.cnt?.pm2_5).toBe(1)
+    expect(aa011.med?.no2).toBe(32) // unflagged param of the flagged station still contributes
+    expect(aa011.cnt?.no2).toBe(2)
+    // pm2_5 cnt 1 band 2 and no2 cnt 2 min 30 band 3 → worst allowed = 3
+    expect(aa011.eaqi).toBe(3)
+    expect(aa011.pollutant).toBe('no2')
+  })
+
+  it('leaves a region uncolored when its only readings are qc-flagged', () => {
+    const built = buildAreas(
+      collect([
+        station('sensor-community:railed', 10.5, 50.5, {
+          qc: ['pm2_5'],
+          values: { pm2_5: { v: 999, ts: FRESH_TS } },
+        }),
+      ]),
+      INDEX,
+      NOW
+    )
+    const aa011 = built.snapshot.areas['AA011']!
+    expect(aa011.n).toBe(1)
+    expect(aa011.med).toBeUndefined()
+    expect(aa011.cnt).toBeUndefined()
     expect(aa011.eaqi).toBeUndefined()
-    expect(aa011.med).toEqual({ pm2_5: 100, pm10: 100, no2: 100 })
+    expect(built.areasColored).toBe(0)
+  })
+
+  it('composes qc and pmHumidityBias exclusions — either alone drops the reading', () => {
+    const built = buildAreas(
+      collect([
+        station('sensor-community:both', 10.5, 50.5, {
+          qc: ['pm2_5'],
+          pmHumidityBias: true,
+          values: { pm2_5: { v: 999, ts: FRESH_TS }, humidity: { v: 97, ts: FRESH_TS } },
+        }),
+        station('sensor-community:2', 10.6, 50.6, { values: { pm2_5: { v: 10, ts: FRESH_TS } } }),
+      ]),
+      INDEX,
+      NOW
+    )
+    const aa011 = built.snapshot.areas['AA011']!
+    expect(aa011.med?.pm2_5).toBe(10)
+    expect(aa011.cnt?.pm2_5).toBe(1)
   })
 
   it('colors with the worst pollutant that meets the per-pollutant threshold', () => {

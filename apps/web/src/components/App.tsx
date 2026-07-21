@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ATTRIBUTIONS } from '@aerismap/shared'
 import { useAreaSnapshot, viewHasAreaFills, withBoundaryAttribution, type AreaMode } from '../lib/areas'
 import { EMPTY_REPOLL_MS, META_STALE_MS } from '../lib/config'
+import { collectionHasHotspots } from '../lib/hotspots'
 import { relativeTime } from '../lib/format'
 import { useSnapshot } from '../lib/snapshot'
 import { VIEWS, type KindFilter, type ViewId } from '../lib/views'
@@ -61,6 +62,10 @@ export default function App() {
 
   const areasReady = areaSnapshot.status === 'ready'
   const areaFillsOn = areaMode === 'auto' && areasReady && viewHasAreaFills(view.id)
+
+  // One check per loaded snapshot: the ◉ legend line only appears when the
+  // data actually contains corroborated hotspots.
+  const hasHotspots = useMemo(() => collectionHasHotspots(snapshot.stations), [snapshot.stations])
 
   const baseAttribution =
     snapshot.meta && snapshot.meta.attribution.length > 0
@@ -128,7 +133,7 @@ export default function App() {
           </div>
         )}
 
-        <Legend view={view} areaNote={areaFillsOn} />
+        <Legend view={view} areaNote={areaFillsOn} showHotspots={hasHotspots} />
         <LayersPanel
           kinds={kinds}
           onKindsChange={setKinds}

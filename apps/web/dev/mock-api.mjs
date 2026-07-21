@@ -143,13 +143,13 @@ const stations = {
       exactLocation: false,
       observedAt: iso(12),
       stale: false,
+      // Spatial-QC demo: railed PM2.5 flagged, no other pollutant → no EAQI.
       values: {
         pm2_5: { v: 101.0, ts: iso(12) },
         temperature: { v: 31.4, ts: iso(12) },
         humidity: { v: 34, ts: iso(12) },
       },
-      eaqi: 5,
-      eaqiPollutant: 'pm2_5',
+      qc: ['pm2_5'],
     }),
     station(23.73, 37.98, {
       id: 'sensor-community:80455',
@@ -169,6 +169,8 @@ const stations = {
       },
       eaqi: 6,
       eaqiPollutant: 'pm2_5',
+      // Corroborated epicenter demo: ◉ ring marker + legend line.
+      hotspot: true,
     }),
   ],
 }
@@ -180,7 +182,7 @@ const meta = {
   counts: {
     stations: stations.features.length,
     byKind: { reference: 3, community: 5 },
-    withEaqi: 7,
+    withEaqi: 6,
   },
   sources: [
     { id: 'sensor-community', ok: true, fetchedAt: iso(26), stations: 5 },
@@ -202,8 +204,81 @@ const meta = {
   ],
 }
 
+// Regional aggregates keyed by NUTS-2 id (all present in the shipped
+// boundaries) — enough coverage to exercise fills, the confidence-opacity
+// ramp, and the EuroGeographics notice in the legend.
+const areas = {
+  generatedAt: iso(20),
+  areas: {
+    DE30: {
+      n: 4,
+      nRef: 2,
+      nCom: 2,
+      eaqi: 3,
+      pollutant: 'no2',
+      med: { pm2_5: 9.2, no2: 32.1, temperature: 23.9, humidity: 52 },
+      cnt: { pm2_5: 4, no2: 3, temperature: 2, humidity: 2 },
+    },
+    ES30: {
+      n: 3,
+      nRef: 3,
+      nCom: 0,
+      eaqi: 5,
+      pollutant: 'o3',
+      med: { o3: 168.0, no2: 14.2 },
+      cnt: { o3: 3, no2: 3 },
+    },
+    FR10: {
+      n: 6,
+      nRef: 1,
+      nCom: 5,
+      eaqi: 2,
+      pollutant: 'pm2_5',
+      med: { pm2_5: 7.8, pm10: 16.3, temperature: 24.6, humidity: 48 },
+      cnt: { pm2_5: 6, pm10: 5, temperature: 4, humidity: 4 },
+    },
+    // Temp/humidity only → no band: renders the no-data gray in EAQI view.
+    CZ01: {
+      n: 2,
+      nRef: 0,
+      nCom: 2,
+      med: { temperature: 21.9, humidity: 63 },
+      cnt: { temperature: 2, humidity: 2 },
+    },
+    ITC4: {
+      n: 5,
+      nRef: 2,
+      nCom: 3,
+      eaqi: 2,
+      pollutant: 'pm10',
+      med: { pm10: 21.0, temperature: 30.2, humidity: 35 },
+      cnt: { pm10: 5, temperature: 3, humidity: 3 },
+    },
+    EL30: {
+      n: 4,
+      nRef: 1,
+      nCom: 3,
+      eaqi: 6,
+      pollutant: 'pm2_5',
+      med: { pm2_5: 152.0, pm10: 210.0, temperature: 35.1, humidity: 24 },
+      cnt: { pm2_5: 4, pm10: 4, temperature: 2, humidity: 2 },
+    },
+    // Single station → low-confidence (faint) fill.
+    NO08: {
+      n: 1,
+      nRef: 1,
+      nCom: 0,
+      eaqi: 1,
+      pollutant: 'pm10',
+      med: { pm10: 8.0, so2: 3.2, temperature: 14.2 },
+      cnt: { pm10: 1, so2: 1, temperature: 1 },
+    },
+  },
+}
+
 const routes = new Map([
   ['/api/v1/stations', stations],
+  ['/api/v1/areas', areas],
   ['/api/v1/meta', meta],
 ])
 

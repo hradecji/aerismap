@@ -5,7 +5,7 @@
     "dev": "next dev",
     "build": "next build",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/areas.test.ts"
+    "test": "tsx --test src/lib/areas.test.ts src/lib/hotspots.test.ts src/lib/stationProps.test.ts src/lib/legendStrip.test.ts src/lib/viewMenu.test.ts"
   },
   "dependencies": {
     "@aerismap/shared": "workspace:*",

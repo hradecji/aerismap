@@ -60,12 +60,26 @@ once the keys exist in KV.
 
 At low zoom the map renders a choropleth of Eurostat NUTS-2/NUTS-3 regions
 instead of ~10k individual dots. Each region's hourly aggregate takes the
-per-pollutant **median** across its non-stale stations, bands each median with
-EAQI, and colors the region by the **worst pollutant** — but only when the
-region has ≥ 3 included stations and the pollutant is measured by ≥ 2 of them
-(regions below the thresholds stay uncolored rather than pretending). Fill
-opacity encodes confidence (station count), and zooming in crossfades the
-choropleth automatically into the station dots.
+per-pollutant **median** across its non-stale, quality-checked stations, bands
+each median with EAQI, and colors the region by the **worst pollutant**.
+Confidence is graduated, not all-or-nothing: a single station can color a
+region in the lower bands only — one sensor may say "fine", never "emergency"
+— severe bands need at least two corroborating stations, and with exactly two
+stations a pollutant is banded by the lower of the two values. Fill opacity
+encodes station count, so single-station regions render faint; zooming in
+crossfades the choropleth automatically into the station dots.
+
+### Data quality
+
+A PM reading is flagged as suspect when it is more than 4× the median of
+same-pollutant readings from nearby stations (within 50 km, needing at least
+3 fresh neighbors) and above 25 µg/m³ — the signature of a railed or stuck
+sensor. Flagged readings still appear in the station popup with a warning,
+but are excluded from the station's EAQI color and from region aggregates.
+The inverse also holds: a station with a genuinely severe unflagged reading
+that is corroborated by a neighboring station — or comes from an official
+reference monitor — is marked with a prominent **hotspot** ring, so real
+pollution epicenters stay visible even at choropleth zooms.
 
 ## Monorepo layout
 

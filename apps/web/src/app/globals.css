@@ -69,16 +69,13 @@ button {
   padding: 2px;
   background: var(--wash);
   border-radius: 8px;
-  overflow-x: auto;
   max-width: 100%;
-  scrollbar-width: none;
-}
-
-.seg::-webkit-scrollbar {
-  display: none;
 }
 
 .seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 0;
   background: transparent;
   color: var(--ink-2);
@@ -98,6 +95,88 @@ button {
   color: var(--ink);
   font-weight: 600;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* “EAQI” suffix badge on the Air Quality tab */
+
+.segBadge {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 1px 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  color: var(--muted);
+}
+
+.seg button[aria-pressed='true'] .segBadge {
+  color: var(--ink-2);
+}
+
+/* ---- “More” menu: popover on desktop, bottom sheet on phones ---- */
+
+.moreWrap {
+  position: relative;
+  display: flex;
+}
+
+.moreCaret {
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.moreScrim {
+  display: none;
+}
+
+.moreMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
+}
+
+.moreMenuTitle {
+  display: none;
+}
+
+.moreMenu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  color: var(--ink-2);
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.moreMenu button:hover,
+.moreMenu button:focus-visible {
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.moreMenu button[aria-checked='true'] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.moreMenu button[aria-checked='true']::after {
+  content: '✓';
+  font-size: 11px;
+  color: var(--ink-2);
 }
 
 /* ---- Freshness banner (status: warning — icon-free text + label pattern) ---- */
@@ -148,12 +227,79 @@ button {
   margin: 6px 0;
 }
 
-/* Legend — bottom-left */
+/* Legend — bottom-left, collapsible */
 
 .legend {
   left: 12px;
   bottom: 12px;
-  max-width: 250px;
+  max-width: 260px;
+}
+
+/* Collapsed: tighter chrome around the single toggle row */
+
+.legendClosed {
+  padding: 3px 10px;
+}
+
+.legendHeading {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.legendToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.legendToggle[aria-expanded='true'] {
+  margin-bottom: 6px;
+}
+
+.legendTitle {
+  flex: 1;
+  min-width: 0;
+}
+
+.legendStrip {
+  width: 104px;
+  height: 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(11, 11, 11, 0.12);
+  flex: none;
+}
+
+.legendChevron {
+  color: var(--muted);
+  font-size: 9px;
+  flex: none;
+}
+
+/* Integrated-index explainer — expanded EAQI legend only */
+
+.legendExplainer {
+  margin: -2px 0 6px;
+  font-size: 10.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* Licence caption kept under the strip while collapsed — never fully hidden */
+
+.legendBoundaryMini {
+  margin: 1px 0 3px;
+  font-size: 9px;
+  color: var(--muted);
 }
 
 .legendBands {
@@ -201,6 +347,14 @@ button {
   color: var(--ink-2);
 }
 
+/* Hotspot marker key — shown only when the snapshot contains hotspots */
+
+.legendHotspot {
+  margin: 7px 0 0;
+  font-size: 10.5px;
+  color: var(--ink-2);
+}
+
 /* Licence small print — EuroGeographics notice, required verbatim */
 
 .legendBoundary {
@@ -224,11 +378,76 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/* Layers panel — top-right */
+/* Layers panel — top-right; phones get a 44×44 button + overlay card */
 
 .layers {
   top: 12px;
   right: 12px;
+}
+
+.layersFab {
+  position: absolute;
+  z-index: 5;
+  top: 10px;
+  right: 10px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.layersFab:hover {
+  color: var(--ink);
+}
+
+/* Tap-catcher behind the open overlay */
+
+.scrim {
+  position: absolute;
+  z-index: 15;
+  inset: 0;
+  background: rgba(11, 11, 11, 0.25);
+}
+
+.layersOverlay {
+  z-index: 20;
+  top: 10px;
+  right: 10px;
+  min-width: 215px;
+  max-width: calc(100vw - 20px);
+}
+
+.layersHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.layersHeadTitle {
+  margin: 0;
+  font-size: 13px;
+}
+
+.layersClose {
+  width: 44px;
+  height: 44px;
+  margin: -8px -10px -8px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+  color: var(--ink-2);
+  cursor: pointer;
 }
 
 .check {
@@ -438,22 +657,88 @@ button {
   color: #6b4e00;
 }
 
+/* Spatial-QC warnings — same notice pattern, warning tint (icon-free) */
+
+.popupWarn {
+  color: #8a3b00;
+}
+
+.popupFlag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid rgba(138, 59, 0, 0.35);
+  border-radius: 4px;
+  font-size: 10px;
+  color: #8a3b00;
+}
+
 .popupLicense {
   margin-top: 8px;
   font-size: 10px;
   color: var(--muted);
 }
 
-/* ---- Small screens ---- */
+/* ---- Small screens ----
+   Must stay in sync with NARROW_QUERY in src/lib/useMediaQuery.ts.
+   All interactive controls get ≥ 44px touch targets here. */
 
 @media (max-width: 640px) {
   .header {
     gap: 8px;
-    padding: 8px 10px;
+    padding: 6px 10px;
+  }
+
+  .brand {
+    font-size: 16px;
   }
 
   .brandSub {
     display: none;
+  }
+
+  .seg button {
+    min-height: 44px;
+    font-size: 12.5px;
+    padding: 5px 8px;
+  }
+
+  /* “More” becomes a bottom-sheet card with a dimmed backdrop */
+
+  .moreScrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    background: rgba(11, 11, 11, 0.3);
+  }
+
+  .moreMenu {
+    position: fixed;
+    top: auto;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 40;
+    padding: 8px;
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  }
+
+  .moreMenuTitle {
+    display: block;
+    padding: 4px 12px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .moreMenu button {
+    min-height: 44px;
+    font-size: 15px;
+    padding: 10px 12px;
   }
 
   .panel {
@@ -464,7 +749,22 @@ button {
   .legend {
     left: 8px;
     bottom: 8px;
-    max-width: 60vw;
+    max-width: min(70vw, 260px);
+  }
+
+  .legendToggle {
+    min-height: 44px;
+  }
+
+  /* Narrow panels can't hold the one-line explainer; let it wrap */
+
+  .legendExplainer {
+    white-space: normal;
+  }
+
+  .legendBody {
+    max-height: 45dvh;
+    overflow-y: auto;
   }
 
   .legendRamp {
@@ -476,9 +776,32 @@ button {
     right: 8px;
   }
 
+  .check {
+    min-height: 44px;
+    margin: 0;
+  }
+
+  .check input {
+    width: 18px;
+    height: 18px;
+  }
+
   .sources {
     right: 8px;
     bottom: 32px;
     max-width: 70vw;
+  }
+
+  .sources summary {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+  }
+
+  /* MapLibre zoom buttons up to touch size too */
+
+  .maplibregl-ctrl-group button {
+    width: 44px;
+    height: 44px;
   }
 }
