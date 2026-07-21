@@ -1,0 +1,131 @@
+{
+  "meta": {
+    "name": "openaq-api",
+    "website": "/",
+    "page": 1,
+    "limit": 1000,
+    "found": 4
+  },
+  "results": [
+    {
+      "id": 2162,
+      "name": "London Marylebone Road",
+      "locality": "London",
+      "timezone": "Europe/London",
+      "country": { "id": 79, "code": "GB", "name": "United Kingdom" },
+      "owner": { "id": 4, "name": "Unknown Governmental Organization" },
+      "provider": { "id": 119, "name": "DEFRA" },
+      "isMobile": false,
+      "isMonitor": true,
+      "instruments": [{ "id": 2, "name": "Government Monitor" }],
+      "sensors": [
+        {
+          "id": 3916,
+          "name": "pm25 µg/m³",
+          "parameter": { "id": 2, "name": "pm25", "units": "µg/m³", "displayName": "PM2.5" }
+        },
+        {
+          "id": 3917,
+          "name": "no2 µg/m³",
+          "parameter": { "id": 5, "name": "no2", "units": "µg/m³", "displayName": "NO₂ mass" }
+        }
+      ],
+      "coordinates": { "latitude": 51.52254, "longitude": -0.15459 },
+      "licenses": [
+        {
+          "id": 33,
+          "name": "UK Open Government Licence v3",
+          "attribution": { "name": "DEFRA", "url": null }
+        }
+      ],
+      "bounds": [-0.15459, 51.52254, -0.15459, 51.52254],
+      "distance": null,
+      "datetimeFirst": { "utc": "2016-11-25T22:00:00Z", "local": "2016-11-25T22:00:00+00:00" },
+      "datetimeLast": { "utc": "2026-07-21T09:00:00Z", "local": "2026-07-21T10:00:00+01:00" }
+    },
+    {
+      "id": 10496,
+      "name": "DEBE065 Berlin Frankfurter Allee",
+      "locality": "Berlin",
+      "timezone": "Europe/Berlin",
+      "country": { "id": 63, "code": "DE", "name": "Germany" },
+      "owner": { "id": 4, "name": "Unknown Governmental Organization" },
+      "provider": { "id": 192, "name": "EEA Germany" },
+      "isMobile": false,
+      "isMonitor": true,
+      "instruments": [{ "id": 2, "name": "Government Monitor" }],
+      "sensors": [
+        {
+          "id": 22910,
+          "name": "pm10 µg/m³",
+          "parameter": { "id": 1, "name": "pm10", "units": "µg/m³", "displayName": "PM10" }
+        },
+        {
+          "id": 22911,
+          "name": "no2 µg/m³",
+          "parameter": { "id": 5, "name": "no2", "units": "µg/m³", "displayName": "NO₂ mass" }
+        },
+        {
+          "id": 22912,
+          "name": "co µg/m³",
+          "parameter": { "id": 4, "name": "co", "units": "µg/m³", "displayName": "CO mass" }
+        }
+      ],
+      "coordinates": { "latitude": 52.514072, "longitude": 13.469663 },
+      "licenses": null,
+      "bounds": [13.469663, 52.514072, 13.469663, 52.514072],
+      "distance": null,
+      "datetimeFirst": { "utc": "2018-02-01T00:00:00Z", "local": "2018-02-01T01:00:00+01:00" },
+      "datetimeLast": { "utc": "2026-07-21T08:00:00Z", "local": "2026-07-21T10:00:00+02:00" }
+    },
+    {
+      "id": 155207,
+      "name": "Sofia Hipodruma",
+      "locality": "Sofia",
+      "timezone": "Europe/Sofia",
+      "country": { "id": 21, "code": "BG", "name": "Bulgaria" },
+      "owner": { "id": 4, "name": "Unknown Governmental Organization" },
+      "provider": { "id": 192, "name": "EEA Bulgaria" },
+      "isMobile": false,
+      "isMonitor": true,
+      "instruments": [{ "id": 2, "name": "Government Monitor" }],
+      "sensors": [
+        {
+          "id": 663401,
+          "name": "o3 µg/m³",
+          "parameter": { "id": 3, "name": "o3", "units": "µg/m³", "displayName": "O₃ mass" }
+        },
+        {
+          "id": 663402,
+          "name": "so2 µg/m³",
+          "parameter": { "id": 6, "name": "so2", "units": "µg/m³", "displayName": "SO₂ mass" }
+        }
+      ],
+      "coordinates": { "latitude": 42.680558, "longitude": 23.296786 },
+      "licenses": null,
+      "bounds": [23.296786, 42.680558, 23.296786, 42.680558],
+      "distance": null,
+      "datetimeFirst": { "utc": "2020-05-12T00:00:00Z", "local": "2020-05-12T03:00:00+03:00" },
+      "datetimeLast": { "utc": "2026-07-21T07:00:00Z", "local": "2026-07-21T10:00:00+03:00" }
+    },
+    {
+      "id": 999001,
+      "name": "Broken registry row (no coordinates)",
+      "locality": null,
+      "timezone": "Europe/Paris",
+      "country": { "id": 61, "code": "FR", "name": "France" },
+      "owner": { "id": 4, "name": "Unknown Governmental Organization" },
+      "provider": { "id": 192, "name": "EEA France" },
+      "isMobile": false,
+      "isMonitor": true,
+      "instruments": [{ "id": 2, "name": "Government Monitor" }],
+      "sensors": [],
+      "coordinates": null,
+      "licenses": null,
+      "bounds": null,
+      "distance": null,
+      "datetimeFirst": null,
+      "datetimeLast": null
+    }
+  ]
+}

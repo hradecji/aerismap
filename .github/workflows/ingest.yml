@@ -1,0 +1,68 @@
+# Hourly ingest: fetch upstream sources, build GeoJSON artifacts, upload to R2.
+#
+# NOTE: GitHub disables scheduled workflows after 60 days without repository
+# activity (aerismap-v2-plan.md §8). Any commit resets the clock; if the map's
+# freshness banner reports stale data, check whether this schedule was
+# auto-disabled under Actions → Ingest → "Enable workflow".
+
+name: Ingest
+
+on:
+  schedule:
+    # Offset minute: top-of-hour crons are heavily delayed by scheduler
+    # congestion (plan §8).
+    - cron: '7 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # Reads the pnpm version from the packageManager field in package.json.
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Without R2 credentials the ingest entrypoint silently falls back to
+      # its local-artifacts mode — in CI that must be a hard failure, not a
+      # no-op run that leaves the map stale.
+      - name: Assert R2 secrets are configured
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          fail=0
+          for name in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+            if ! test -n "${!name}"; then
+              echo "::error::Repository secret $name is missing or empty — the ingest job cannot upload to R2. See README → Deployment step 5."
+              fail=1
+            fi
+          done
+          exit "$fail"
+
+      - name: Run ingest
+        run: pnpm --filter @aerismap/ingest ingest
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: aerismap-data
+          # Optional: OpenAQ API key for the official-station source
+          # (free registration — see README).
+          OPENAQ_API_KEY: ${{ secrets.OPENAQ_API_KEY }}

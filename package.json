@@ -1,0 +1,14 @@
+{
+  "name": "aerismap",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.13.1",
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "ingest": "pnpm --filter @aerismap/ingest ingest"
+  }
+}

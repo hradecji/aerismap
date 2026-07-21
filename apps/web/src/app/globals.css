@@ -1,0 +1,484 @@
+/* AerisMap — light, minimal chrome; the map is the hero. */
+
+:root {
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --hairline: rgba(11, 11, 11, 0.1);
+  --surface: #ffffff;
+  --wash: #f0efec;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--ink);
+  background: #f9f9f7;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+/* ---- Header ---- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.brand {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.brandSub {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--wash);
+  border-radius: 8px;
+  overflow-x: auto;
+  max-width: 100%;
+  scrollbar-width: none;
+}
+
+.seg::-webkit-scrollbar {
+  display: none;
+}
+
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 13px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.seg button:hover {
+  color: var(--ink);
+}
+
+.seg button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* ---- Freshness banner (status: warning — icon-free text + label pattern) ---- */
+
+.banner {
+  padding: 6px 14px;
+  font-size: 13px;
+  background: #fdf3dc;
+  color: #6b4e00;
+  border-bottom: 1px solid #f0e0b6;
+}
+
+/* ---- Map ---- */
+
+.mapWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+}
+
+/* ---- Floating panels ---- */
+
+.panel {
+  position: absolute;
+  z-index: 5;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 10px 12px;
+  font-size: 12px;
+}
+
+.panelTitle {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.panelRule {
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  margin: 6px 0;
+}
+
+/* Legend — bottom-left */
+
+.legend {
+  left: 12px;
+  bottom: 12px;
+  max-width: 250px;
+}
+
+.legendBands {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.legendBands li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 3px 0;
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(11, 11, 11, 0.12);
+  flex: none;
+}
+
+.legendLabel {
+  color: var(--ink);
+}
+
+.legendDetail {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.legendRamp {
+  width: 190px;
+}
+
+/* Confidence note shown while area fills are visible */
+
+.legendNote {
+  margin: 7px 0 0;
+  font-size: 10.5px;
+  color: var(--ink-2);
+}
+
+/* Licence small print — EuroGeographics notice, required verbatim */
+
+.legendBoundary {
+  margin: 3px 0 0;
+  font-size: 9.5px;
+  color: var(--muted);
+}
+
+.rampBar {
+  height: 10px;
+  border-radius: 5px;
+  border: 1px solid rgba(11, 11, 11, 0.12);
+}
+
+.rampTicks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Layers panel — top-right */
+
+.layers {
+  top: 12px;
+  right: 12px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  cursor: pointer;
+}
+
+.check input {
+  accent-color: #2a78d6;
+  margin: 0;
+}
+
+.checkHint {
+  color: var(--muted);
+}
+
+.panelNote {
+  margin: 4px 0 0;
+  max-width: 170px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Data sources — bottom-right, above the basemap attribution */
+
+.sources {
+  right: 12px;
+  bottom: 36px;
+  max-width: 280px;
+}
+
+.sources summary {
+  cursor: pointer;
+  font-weight: 600;
+  user-select: none;
+}
+
+.sourcesList {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.sourcesList li {
+  margin: 3px 0;
+}
+
+.sourcesList a {
+  color: #1c5cab;
+  text-decoration: none;
+}
+
+.sourcesList a:hover {
+  text-decoration: underline;
+}
+
+.sourceLicense {
+  color: var(--muted);
+}
+
+/* ---- Loading / empty / error states ---- */
+
+.statusPill {
+  position: absolute;
+  z-index: 6;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.statusCardWrap {
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.statusCard {
+  pointer-events: auto;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 18px 20px;
+  max-width: 320px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.statusCard strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.statusCard p {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.retry {
+  margin-top: 12px;
+  border: 1px solid var(--hairline);
+  background: var(--wash);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 6px 16px;
+  cursor: pointer;
+}
+
+.retry:hover {
+  background: #e6e5e0;
+}
+
+/* ---- Station popup ---- */
+
+.maplibregl-popup-content {
+  font-family: inherit;
+  padding: 12px 14px;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+}
+
+.popup {
+  min-width: 200px;
+}
+
+.popupTitle {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.popupMeta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.popupBadge {
+  display: inline-block;
+  margin: 8px 0 2px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.popupBadgeSub {
+  font-weight: 400;
+  font-size: 11px;
+}
+
+.popupValues {
+  margin: 8px 0 0;
+}
+
+.popupRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  margin: 3px 0;
+  font-size: 12px;
+}
+
+.popupRow dt {
+  color: var(--ink-2);
+}
+
+.popupRow dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.popupUnit {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.popupWhen {
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: 6px;
+}
+
+.popupNote {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.popupStale {
+  color: #6b4e00;
+}
+
+.popupLicense {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* ---- Small screens ---- */
+
+@media (max-width: 640px) {
+  .header {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .brandSub {
+    display: none;
+  }
+
+  .panel {
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+
+  .legend {
+    left: 8px;
+    bottom: 8px;
+    max-width: 60vw;
+  }
+
+  .legendRamp {
+    width: 150px;
+  }
+
+  .layers {
+    top: 8px;
+    right: 8px;
+  }
+
+  .sources {
+    right: 8px;
+    bottom: 32px;
+    max-width: 70vw;
+  }
+}

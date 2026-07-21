@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aerismap",
+  "main": "src/index.ts",
+  // Matches the workerd version pinned by the installed wrangler; bump when updating wrangler.
+  "compatibility_date": "2026-07-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "../apps/web/out",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "r2_buckets": [
+    {
+      "binding": "DATA",
+      "bucket_name": "aerismap-data"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+  // No cron triggers on purpose: free-plan Workers can't run the ingest job
+  // (10 ms CPU / 50 subrequests). Ingestion runs in GitHub Actions — see
+  // .github/workflows/ingest.yml.
+}

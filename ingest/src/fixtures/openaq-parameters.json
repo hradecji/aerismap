@@ -1,0 +1,21 @@
+{
+  "meta": {
+    "name": "openaq-api",
+    "website": "/",
+    "page": 1,
+    "limit": 1000,
+    "found": 10
+  },
+  "results": [
+    { "id": 1, "name": "pm10", "units": "µg/m³", "displayName": "PM10" },
+    { "id": 2, "name": "pm25", "units": "µg/m³", "displayName": "PM2.5" },
+    { "id": 3, "name": "o3", "units": "µg/m³", "displayName": "O₃ mass" },
+    { "id": 4, "name": "co", "units": "µg/m³", "displayName": "CO mass" },
+    { "id": 5, "name": "no2", "units": "µg/m³", "displayName": "NO₂ mass" },
+    { "id": 6, "name": "so2", "units": "µg/m³", "displayName": "SO₂ mass" },
+    { "id": 7, "name": "no2", "units": "ppm", "displayName": "NO₂" },
+    { "id": 8, "name": "co", "units": "ppm", "displayName": "CO" },
+    { "id": 9, "name": "so2", "units": "ppm", "displayName": "SO₂" },
+    { "id": 10, "name": "o3", "units": "ppm", "displayName": "O₃" }
+  ]
+}
