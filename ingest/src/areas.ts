@@ -119,11 +119,16 @@ export function prepareBoundaryIndex(collection: NutsAssignCollection): Boundary
     regions.push({ id, bbox: [minLon, minLat, maxLon, maxLat], rings })
     nuts2.add(id.slice(0, 4))
   }
+  // Countries without a NUTS-3 subdivision (Bosnia) are spliced into the
+  // assignment set with their NUTS-2 polygons, so an assignment id can BE a
+  // NUTS-2 id — count each distinct region once, not per level.
+  const assignmentIds = new Set(regions.map((r) => r.id))
+  const nuts2Only = [...nuts2].filter((id) => !assignmentIds.has(id))
   return {
     regions,
     nuts3Count: regions.length,
     nuts2Count: nuts2.size,
-    totalRegions: regions.length + nuts2.size,
+    totalRegions: regions.length + nuts2Only.length,
   }
 }
 
@@ -303,7 +308,9 @@ export function buildAreas(collection: StationCollection, index: BoundaryIndex, 
       unassignedStations++
       continue
     }
-    for (const id of [nuts3, nuts3.slice(0, 4)]) {
+    // Set-dedupe: for spliced no-NUTS-3 countries (Bosnia) the assignment id
+    // IS the NUTS-2 id — without the dedupe the station would count twice.
+    for (const id of new Set([nuts3, nuts3.slice(0, 4)])) {
       const list = byRegion.get(id)
       if (list) list.push(feature)
       else byRegion.set(id, [feature])

@@ -457,9 +457,12 @@ describe('vendored assignment boundaries (smoke)', () => {
   it('exists, has the expected region universe, and assigns known points', async () => {
     await access(ASSIGN_BOUNDARIES_PATH)
     const index = await loadBoundaryIndex()
-    expect(index.nuts3Count).toBe(1524) // 1,345 NUTS-2024 + 179 UK NUTS-2021
-    expect(index.nuts2Count).toBe(337) // BA01–BA03 have no NUTS-3 children
-    expect(index.totalRegions).toBe(1861)
+    // 1,345 NUTS-2024 + 179 UK NUTS-2021 + 3 BA NUTS-2 (spliced — Bosnia has
+    // no NUTS-3 subdivision, so its NUTS-2 units live in the NUTS-3 layer too)
+    expect(index.nuts3Count).toBe(1527)
+    expect(index.nuts2Count).toBe(340)
+    // BA ids exist at both levels but count once: 1527 + (340 − 3)
+    expect(index.totalRegions).toBe(1864)
     const prague = assignRegion(index, 14.42, 50.09)
     expect(prague).toBe('CZ010')
     expect(prague!.slice(0, 4)).toBe('CZ01')

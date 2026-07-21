@@ -127,6 +127,7 @@ async function main(): Promise<void> {
   const l3_2021 = await download('NUTS_RG_20M_2021_4326_LEVL_3.geojson')
   const l3_2024_03m = await download('NUTS_RG_03M_2024_4326_LEVL_3.geojson')
   const l3_2021_03m = await download('NUTS_RG_03M_2021_4326_LEVL_3.geojson')
+  const l2_2024_03m = await download('NUTS_RG_03M_2024_4326_LEVL_2.geojson')
 
   if (l2_2024.features.length !== EXPECTED.l2_2024)
     throw new Error(`2024 L2: expected ${EXPECTED.l2_2024} features, got ${l2_2024.features.length}`)
@@ -145,10 +146,26 @@ async function main(): Promise<void> {
   if (ukL3.length !== ukL3_03m.length)
     throw new Error(`UK L3 unit mismatch across scales: 20M has ${ukL3.length}, 03M has ${ukL3_03m.length}`)
 
+  // Bosnia has NUTS-2 but no NUTS-3 subdivision — splice its NUTS-2 polygons
+  // into the NUTS-3 layer and the assignment set so BiH renders and
+  // aggregates at every zoom instead of vanishing past the level handoff.
+  // (The NUTS-2 rollup in areas.ts dedupes ids that exist at both levels.)
+  const onlyBa = (doc: NutsCollection): NutsFeature[] =>
+    doc.features.filter((f) => f.properties.CNTR_CODE === 'BA')
+  const baL2 = trim(onlyBa(l2_2024), 'NUTS_RG_20M_2024_4326_LEVL_2.geojson [BA]')
+  const baL2_03m = trim(onlyBa(l2_2024_03m), 'NUTS_RG_03M_2024_4326_LEVL_2.geojson [BA]')
+  if (baL2.length === 0) throw new Error('2024 BA L2: no features after CNTR_CODE filter')
+  if (baL2.length !== baL2_03m.length)
+    throw new Error(`BA L2 unit mismatch across scales: 20M has ${baL2.length}, 03M has ${baL2_03m.length}`)
+
   const nuts2 = merge(trim(l2_2024.features, 'NUTS_RG_20M_2024_4326_LEVL_2.geojson'), ukL2, 'nuts2')
-  const nuts3 = merge(trim(l3_2024.features, 'NUTS_RG_20M_2024_4326_LEVL_3.geojson'), ukL3, 'nuts3')
+  const nuts3 = merge(
+    [...trim(l3_2024.features, 'NUTS_RG_20M_2024_4326_LEVL_3.geojson'), ...baL2],
+    ukL3,
+    'nuts3'
+  )
   const assign = merge(
-    trim(l3_2024_03m.features, 'NUTS_RG_03M_2024_4326_LEVL_3.geojson'),
+    [...trim(l3_2024_03m.features, 'NUTS_RG_03M_2024_4326_LEVL_3.geojson'), ...baL2_03m],
     ukL3_03m,
     'nuts3-assign'
   )
