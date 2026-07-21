@@ -133,7 +133,7 @@ export default function App() {
           </div>
         )}
 
-        <Legend view={view} areaNote={areaFillsOn} showHotspots={hasHotspots} />
+        <Legend view={view} areaNote={areaFillsOn} showHotspots={hasHotspots && view.id === 'eaqi'} />
         <LayersPanel
           kinds={kinds}
           onKindsChange={setKinds}
