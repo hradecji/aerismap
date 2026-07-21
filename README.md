@@ -22,15 +22,16 @@ Planning docs: [aerismap-v2-plan.md](aerismap-v2-plan.md) (architecture — the
 ┌────────────────────────────┐        ┌──────────────────────────────┐
 │  GitHub Actions (hourly)   │        │  Cloudflare (free plan)      │
 │  ingest/ (Node + TS)       │        │                              │
-│                            │  S3    │  ┌────────────────────────┐  │
-│  1. Sensor.Community dumps │  API   │  │ R2 bucket (private)    │  │
-│  2. OpenAQ v3 latest       ├───────▶│  │  latest/*.geojson.gz   │  │
-│  3. Open-Meteo S3 grids    │  put   │  └───────────┬────────────┘  │
-│     (CAMS AQ + ICON temp)  │        │              │ binding       │
-│                            │        │  ┌───────────▼────────────┐  │
-│  normalize → EAQI → build  │        │  │ Worker (aerismap)      │  │
-│  GeoJSON artifacts         │        │  │  /api/v1/* → R2        │  │
-└────────────────────────────┘        │  │  /* → static assets    │  │
+│                            │  KV    │  ┌────────────────────────┐  │
+│  1. Sensor.Community dumps │  REST  │  │ Workers KV             │  │
+│  2. OpenAQ v3 latest       ├───────▶│  │ (namespace DATA)       │  │
+│  3. Open-Meteo S3 grids    │  API   │  │  latest/*.geojson.gz   │  │
+│     (CAMS AQ + ICON temp)  │  put   │  └───────────┬────────────┘  │
+│                            │        │              │ binding       │
+│  normalize → EAQI → build  │        │  ┌───────────▼────────────┐  │
+│  GeoJSON artifacts         │        │  │ Worker (aerismap)      │  │
+└────────────────────────────┘        │  │  /api/v1/* → KV        │  │
+                                      │  │  /* → static assets    │  │
                                       │  │  (Next.js export)      │  │
                                       │  └────────────────────────┘  │
                                       │   *.workers.dev              │
@@ -40,10 +41,10 @@ Planning docs: [aerismap-v2-plan.md](aerismap-v2-plan.md) (architecture — the
 Cloudflare only *serves*; all fetching and normalizing runs in an hourly
 GitHub Actions job (a free-plan cron Worker gets 10 ms CPU and 50
 subrequests — unusable for ingestion). The Worker answers five read-only API
-routes straight from R2 and serves the static Next.js export for everything
-else.
+routes straight from Workers KV (namespace binding `DATA`) and serves the
+static Next.js export for everything else.
 
-| Route | R2 object |
+| Route | KV key |
 |---|---|
 | `GET /api/v1/stations` | `latest/stations.geojson.gz` |
 | `GET /api/v1/areas` | `latest/areas.json.gz` |
@@ -53,7 +54,7 @@ else.
 
 The two planned routes answer 404 (`problem+json` with a "planned, milestone
 M2" detail) until their ingest stages ship; they start serving automatically
-once the objects exist in R2.
+once the keys exist in KV.
 
 ### Area mode
 
@@ -71,9 +72,9 @@ choropleth automatically into the station dots.
 ```
 aeris/
 ├── apps/web/          Next.js (output: 'export') + MapLibre GL JS frontend
-├── packages/shared/   Shared contract: station schema, EAQI bands, R2 keys, API paths
+├── packages/shared/   Shared contract: station schema, EAQI bands, store keys, API paths
 ├── ingest/            Ingest pipeline (run hourly by GitHub Actions, runnable locally)
-├── worker/            Cloudflare Worker: /api/v1/* from R2, everything else static assets
+├── worker/            Cloudflare Worker: /api/v1/* from KV, everything else static assets
 └── .github/workflows/ ingest.yml (hourly cron) + deploy.yml (push to main)
 ```
 
@@ -88,10 +89,10 @@ Node ≥ 25 no longer bundles Corepack, so install pnpm directly with
 # 1. Install
 pnpm install
 
-# 2. Build data artifacts locally (no R2 env set → writes ingest/.artifacts/ instead of uploading)
+# 2. Build data artifacts locally (no Cloudflare KV env set → writes ingest/.artifacts/ instead of uploading)
 pnpm --filter @aerismap/ingest ingest
 
-# 3. Seed the local R2 simulator with those artifacts
+# 3. Seed the local KV simulator with those artifacts
 pnpm --filter @aerismap/worker seed:local
 
 # 4. Build the static web app (the Worker serves apps/web/out)
@@ -110,37 +111,51 @@ Checks: `pnpm typecheck` and `pnpm test` run across all packages.
 
 ## Deployment
 
+The whole stack runs on the **card-free Workers Free plan** — Workers KV was
+chosen over R2 as the artifact store precisely because activating R2 requires
+putting a payment card on the Cloudflare account (a deliberate project
+decision: no billing surface at all), while KV is included in the Free plan.
+Nothing below asks for billing details.
+
 1. Create a [Cloudflare account](https://dash.cloudflare.com/sign-up) (free
-   plan is sufficient).
-2. Create the R2 bucket: `pnpm --filter @aerismap/worker exec wrangler r2
-   bucket create aerismap-data` (or via the dashboard). The name must match
-   `bucket_name` in `worker/wrangler.jsonc`.
-3. Create an **R2 API token** (dashboard → R2 → Manage API tokens →
-   Object Read & Write, scoped to `aerismap-data`). Note the Access Key ID,
-   Secret Access Key, and your account ID — the ingest job uploads via the
-   S3 API with these.
-4. First deploy from your machine: `pnpm install && pnpm --filter
+   plan; no payment card needed).
+2. Create the KV namespace: `pnpm --filter @aerismap/worker exec wrangler kv
+   namespace create DATA` (or via the dashboard). Put the namespace id it
+   prints into the `kv_namespaces` entry (binding `DATA`) in
+   `worker/wrangler.jsonc` — the same id also becomes the
+   `CLOUDFLARE_KV_NAMESPACE_ID` repo secret below.
+3. First deploy from your machine: `pnpm install && pnpm --filter
    @aerismap/web build` (the Worker serves `apps/web/out`, which must exist),
    then `pnpm --filter @aerismap/worker exec wrangler login` and
    `pnpm --filter @aerismap/worker deploy`. This registers the `aerismap`
    Worker on your `*.workers.dev` subdomain.
-5. Create a **Cloudflare API token** for CI (dashboard → My Profile → API
-   Tokens → "Edit Cloudflare Workers" template) and add the GitHub repo
-   secrets:
+4. Create **one custom Cloudflare API token** for CI (dashboard → My Profile
+   → API Tokens → Create Custom Token) with two permissions:
+   **Account → Workers Scripts → Edit** (used by deploy.yml) and
+   **Account → Workers KV Storage → Edit** (used by ingest.yml to upload
+   artifacts via the KV REST API). Then add the GitHub repo secrets:
 
    | Secret | Used by | Value |
    |---|---|---|
-   | `CLOUDFLARE_API_TOKEN` | deploy.yml | API token with Workers edit permission |
-   | `CLOUDFLARE_ACCOUNT_ID` | deploy.yml | Cloudflare account ID |
-   | `R2_ACCOUNT_ID` | ingest.yml | Cloudflare account ID (S3 endpoint) |
-   | `R2_ACCESS_KEY_ID` | ingest.yml | R2 API token access key |
-   | `R2_SECRET_ACCESS_KEY` | ingest.yml | R2 API token secret |
+   | `CLOUDFLARE_API_TOKEN` | deploy.yml + ingest.yml | The custom API token above (Workers Scripts:Edit + Workers KV Storage:Edit) |
+   | `CLOUDFLARE_ACCOUNT_ID` | deploy.yml + ingest.yml | Cloudflare account ID |
+   | `CLOUDFLARE_KV_NAMESPACE_ID` | ingest.yml | The `DATA` namespace id from step 2 (this deployment uses `20dedaab5bfb468c900b4346669eb41e`; namespace ids are not secrets, but keeping it alongside the others is convenient) |
    | `OPENAQ_API_KEY` | ingest.yml (optional) | [Free OpenAQ key](https://explore.openaq.org/register) for the official-station source |
 
-6. Push to `main` — `deploy.yml` typechecks, tests, builds the web export,
+5. Push to `main` — `deploy.yml` typechecks, tests, builds the web export,
    and deploys the Worker. `ingest.yml` then publishes fresh data at minute 7
    of every hour (or trigger it manually under Actions → Ingest → Run
    workflow).
+
+KV free-plan headroom (limits per
+[Cloudflare's KV docs](https://developers.cloudflare.com/kv/platform/limits/)):
+the hourly ingest writes 5 keys × 24 runs ≈ **120 writes/day of the 1,000/day
+cap**; the artifacts total **~0.42 MB gz of the 1 GB storage cap** (largest
+single value ~398 KB vs the 25 MiB/value cap); API reads draw on 100k KV
+reads/day, matching the Worker's own 100k req/day. If a cap is ever exceeded,
+the behavior is failed requests for the rest of the UTC day — the Worker
+carries forward and serves the last stored (stale) artifacts, and there is
+never a surprise bill, because no billing is configured.
 
 Note: the repo should stay **public** — GitHub Actions minutes are unlimited
 for public repos, and the hourly ingest job would exhaust a private repo's

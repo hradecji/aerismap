@@ -16,7 +16,7 @@ const MAX_FUTURE_SKEW_MS = 10 * 60 * 1000
 const MAX_PAGE_BYTES = 8 * 1024 * 1024
 /** Below this the fetch "worked" but the data is implausible (normal ≈ 3.5–4.5k stations). */
 const MIN_PLAUSIBLE_STATIONS = 100
-/** Persisted /locations registry object (R2 when configured, else the local out dir). */
+/** Persisted /locations registry object (Cloudflare KV when configured, else the local out dir). */
 export const OPENAQ_REGISTRY_KEY = 'internal/openaq-registry.json'
 /** Reuse the persisted registry below this age; refetch /locations beyond it. */
 const REGISTRY_TTL_MS = 24 * 3600 * 1000

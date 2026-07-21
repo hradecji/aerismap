@@ -2,7 +2,7 @@ import { handleApi } from './api'
 import { problem } from './problem'
 
 export interface Env {
-  DATA: R2Bucket
+  DATA: KVNamespace
   ASSETS: Fetcher
 }
 

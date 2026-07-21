@@ -1,17 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import type { R2Config } from './output'
-import { ciMissingR2Error, ciWarningAnnotations } from './run'
+import type { KvConfig } from './output'
+import { ciMissingKvError, ciWarningAnnotations } from './run'
 
-const R2: R2Config = { accountId: 'acc', accessKeyId: 'key', secretAccessKey: 'secret', bucket: 'b' }
+const KV: KvConfig = { accountId: 'acct', namespaceId: 'ns', apiToken: 'tok' }
 
-describe('ciMissingR2Error', () => {
-  it('errors when GITHUB_ACTIONS is set without R2 configuration', () => {
-    expect(ciMissingR2Error({ GITHUB_ACTIONS: 'true' }, undefined)).toContain('R2 is not configured')
+describe('ciMissingKvError', () => {
+  it('errors when GITHUB_ACTIONS is set without KV configuration', () => {
+    const message = ciMissingKvError({ GITHUB_ACTIONS: 'true' }, undefined)
+    expect(message).toContain('Cloudflare KV is not configured')
+    expect(message).toContain('CLOUDFLARE_API_TOKEN')
+    expect(message).toContain('CLOUDFLARE_ACCOUNT_ID')
+    expect(message).toContain('CLOUDFLARE_KV_NAMESPACE_ID')
   })
 
-  it('passes when R2 is configured or outside CI', () => {
-    expect(ciMissingR2Error({ GITHUB_ACTIONS: 'true' }, R2)).toBeUndefined()
-    expect(ciMissingR2Error({}, undefined)).toBeUndefined()
+  it('passes when KV is configured or outside CI', () => {
+    expect(ciMissingKvError({ GITHUB_ACTIONS: 'true' }, KV)).toBeUndefined()
+    expect(ciMissingKvError({}, undefined)).toBeUndefined()
   })
 })
 

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "seed:local": "for f in stations.geojson.gz areas.json.gz temp-isobands.geojson.gz aqi-grid.geojson.gz meta.json; do if [ -f ../ingest/.artifacts/latest/$f ]; then wrangler r2 object put aerismap-data/latest/$f --file ../ingest/.artifacts/latest/$f --local || exit 1; fi; done",
+    "seed:local": "for f in stations.geojson.gz areas.json.gz temp-isobands.geojson.gz aqi-grid.geojson.gz meta.json; do if [ -f ../ingest/.artifacts/latest/$f ]; then wrangler kv key put --binding DATA \"latest/$f\" --path ../ingest/.artifacts/latest/$f --local || exit 1; fi; done",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

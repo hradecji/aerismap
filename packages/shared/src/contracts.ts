@@ -11,14 +11,32 @@ export const MAX_AGE_SEC = {
   model: 10800,
 } as const
 
-/** R2 object keys written by ingest and read by the worker. */
-export const R2_KEYS = {
+/**
+ * KV keys written by ingest (Cloudflare KV REST API) and read by the worker
+ * (KV binding). KV was chosen over R2 so the whole stack stays on the
+ * card-free Workers Free plan (decision 2026-07-21); artifacts measure
+ * ~0.4 MB gz total against KV's 25 MiB/value and 1 GB/namespace caps.
+ */
+export const STORE_KEYS = {
   stations: 'latest/stations.geojson.gz',
   areas: 'latest/areas.json.gz',
   tempIsobands: 'latest/temp-isobands.geojson.gz',
   aqiGrid: 'latest/aqi-grid.geojson.gz',
   meta: 'latest/meta.json',
 } as const
+
+/**
+ * KV per-key metadata written by ingest alongside each value; the worker
+ * serves ETag/Content-Length from it (KV has no native object metadata).
+ */
+export interface StoreMetadata {
+  /** Strong ETag: sha-256 hex of the stored bytes, unquoted. */
+  etag: string
+  /** Stored byte length (the gzipped size for .gz keys). */
+  size: number
+  contentType: string
+  contentEncoding?: 'gzip'
+}
 
 export const API_PATHS = {
   stations: '/api/v1/stations',
@@ -29,7 +47,7 @@ export const API_PATHS = {
 } as const
 
 /**
- * NUTS boundary GeoJSONs served as immutable static assets (not from R2).
+ * NUTS boundary GeoJSONs served as immutable static assets (not from KV).
  * Prepared once by ingest/scripts/prepare-boundaries.ts from Eurostat GISCO
  * NUTS-2024 1:20M (plus the NUTS-2021 UK splice); properties kept per
  * feature: NUTS_ID, LEVL_CODE, NAME_LATN, CNTR_CODE. MapLibre joins area

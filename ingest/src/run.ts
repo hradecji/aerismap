@@ -3,14 +3,14 @@ import type { SourceStatus } from '@aerismap/shared'
 import { buildAreasForRun } from './areas'
 import {
   buildArtifacts,
-  getFromR2,
+  getFromKv,
   loadPreviousStations,
+  readKvConfig,
   readLocalObject,
-  readR2Config,
-  uploadToR2,
+  uploadToKv,
   writeLocal,
   type Artifact,
-  type R2Config,
+  type KvConfig,
 } from './output'
 import { buildSnapshot } from './snapshot'
 import { fetchOpenaq, OPENAQ_REGISTRY_KEY, type RegistryStore } from './sources/openaq'
@@ -33,18 +33,18 @@ function formatBytes(n: number): string {
 }
 
 /**
- * In GitHub Actions a run without R2 credentials would go green while
- * uploading nothing (missing or misnamed secrets) — fail loudly instead.
+ * In GitHub Actions a run without Cloudflare KV credentials would go green
+ * while uploading nothing (missing or misnamed secrets) — fail loudly instead.
  */
-export function ciMissingR2Error(
+export function ciMissingKvError(
   env: NodeJS.ProcessEnv,
-  r2: R2Config | undefined
+  kv: KvConfig | undefined
 ): string | undefined {
-  if (env.GITHUB_ACTIONS && !r2) {
+  if (env.GITHUB_ACTIONS && !kv) {
     return (
-      'GITHUB_ACTIONS is set but R2 is not configured (need R2_ACCOUNT_ID, ' +
-      'R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY) — a CI run that cannot upload ' +
-      'is a misconfiguration; check the repository secrets'
+      'GITHUB_ACTIONS is set but Cloudflare KV is not configured (need ' +
+      'CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_KV_NAMESPACE_ID) ' +
+      '— a CI run that cannot upload is a misconfiguration; check the repository secrets'
     )
   }
   return undefined
@@ -65,12 +65,12 @@ export function ciWarningAnnotations(sources: readonly SourceStatus[]): string[]
   return lines
 }
 
-/** Registry cache backing: R2 when configured, else the local out dir. */
-function createRegistryStore(r2: R2Config | undefined, outDir: string | undefined): RegistryStore {
+/** Registry cache backing: KV when configured, else the local out dir. */
+function createRegistryStore(kv: KvConfig | undefined, outDir: string | undefined): RegistryStore {
   return {
     load: async () => {
-      const body = r2
-        ? await getFromR2(OPENAQ_REGISTRY_KEY, r2)
+      const body = kv
+        ? await getFromKv(OPENAQ_REGISTRY_KEY, kv)
         : outDir
           ? await readLocalObject(OPENAQ_REGISTRY_KEY, outDir)
           : undefined
@@ -82,7 +82,7 @@ function createRegistryStore(r2: R2Config | undefined, outDir: string | undefine
         body: Buffer.from(body),
         contentType: 'application/json',
       }
-      if (r2) await uploadToR2([artifact], r2)
+      if (kv) await uploadToKv([artifact], kv)
       else if (outDir) await writeLocal([artifact], outDir)
     },
   }
@@ -91,16 +91,16 @@ function createRegistryStore(r2: R2Config | undefined, outDir: string | undefine
 async function main(): Promise<number> {
   const startedAt = Date.now()
   const { outDir: outArg } = parseArgs(process.argv.slice(2))
-  const r2 = readR2Config()
+  const kv = readKvConfig()
 
-  const ciError = ciMissingR2Error(process.env, r2)
+  const ciError = ciMissingKvError(process.env, kv)
   if (ciError) {
     console.error(`[ingest] ${ciError}`)
     return 1
   }
 
-  const outDir = outArg ?? (r2 ? undefined : '.artifacts')
-  const registryStore = createRegistryStore(r2, outDir)
+  const outDir = outArg ?? (kv ? undefined : '.artifacts')
+  const registryStore = createRegistryStore(kv, outDir)
 
   const results = await Promise.all([fetchSensorCommunity(), fetchOpenaq({ registryStore })])
 
@@ -119,7 +119,7 @@ async function main(): Promise<number> {
   // A failed source's stations are carried forward from the previous snapshot
   // instead of silently shrinking the map.
   const previous = results.some((r) => !r.status.ok)
-    ? await loadPreviousStations(r2, outDir)
+    ? await loadPreviousStations(kv, outDir)
     : undefined
 
   const now = new Date()
@@ -153,11 +153,11 @@ async function main(): Promise<number> {
       console.log(`[ingest] wrote ${paths[i]} (${formatBytes(artifacts[i]!.body.byteLength)})`)
     }
   }
-  if (r2) {
-    await uploadToR2(artifacts, r2)
+  if (kv) {
+    await uploadToKv(artifacts, kv)
     for (const artifact of artifacts) {
       console.log(
-        `[ingest] uploaded r2://${r2.bucket}/${artifact.key} (${formatBytes(artifact.body.byteLength)})`
+        `[ingest] uploaded kv:${artifact.key} (${formatBytes(artifact.body.byteLength)})`
       )
     }
   }
