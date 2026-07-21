@@ -1,5 +1,6 @@
 /** Sent on every upstream request — mandatory for Sensor.Community, good manners elsewhere. */
-export const USER_AGENT = 'AerisMap/2.0 (+https://github.com/aerismap; hosted ingest)'
+export const USER_AGENT =
+  'AerisMap/2.0 (+https://github.com/hradecji/aerismap; contact via repo issues)'
 
 export class HttpError extends Error {
   constructor(

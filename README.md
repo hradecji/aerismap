@@ -7,14 +7,30 @@ Quality Index (EAQI), refreshed hourly, hosted for $0/month.
 - **Community sensors** — [Sensor.Community](https://sensor.community/) PM +
   co-located temperature (~9.5k locations)
 - **Official stations** — EEA reference network via
-  [OpenAQ v3](https://openaq.org/) (~3.5–4.5k stations)
+  [OpenAQ v3](https://openaq.org/) (~2.5k stations reporting fresh data of a ~4k+ registry)
 - **Model layers** — planned (M2): CAMS Europe AQ grid and DWD ICON
   temperature isobands from
   [Open-Meteo's open-data bucket](https://open-meteo.com/)
 
-Planning docs: [aerismap-v2-plan.md](aerismap-v2-plan.md) (architecture — the
-"how, exactly") and [aerismap-europe-upgrade.md](aerismap-europe-upgrade.md)
-(data-source brief — the "what and why").
+## Documentation
+
+- [docs/operations.md](docs/operations.md) — runbook: workflows and secrets,
+  failure triage, KV caps, token rotation, boundary re-vendoring, live probes,
+  monitoring via `/api/v1/meta`.
+- [docs/data-pipeline.md](docs/data-pipeline.md) — how a reading becomes a
+  published artifact: sources and sanitization, QC, area aggregation, the
+  KV/artifact contract.
+- [docs/frontend.md](docs/frontend.md) — the web app: views and the
+  mobile-adaptive UI, area/point rendering, the hotspot contrast rule,
+  client-side data flattening.
+- [docs/api.md](docs/api.md) — HTTP API reference: routes, headers,
+  conditional requests, response schemas, licence obligations for reusers.
+- [docs/decisions.md](docs/decisions.md) — dated decision log: what was
+  chosen, why, and when to revisit.
+- [aerismap-v2-plan.md](aerismap-v2-plan.md) — planning and decision record
+  (the "how, exactly"), maintained through launch on 2026-07-21.
+- [aerismap-europe-upgrade.md](aerismap-europe-upgrade.md) — the original
+  data-source brief (the "what and why").
 
 ## Architecture
 
@@ -25,7 +41,7 @@ Planning docs: [aerismap-v2-plan.md](aerismap-v2-plan.md) (architecture — the
 │                            │  KV    │  ┌────────────────────────┐  │
 │  1. Sensor.Community dumps │  REST  │  │ Workers KV             │  │
 │  2. OpenAQ v3 latest       ├───────▶│  │ (namespace DATA)       │  │
-│  3. Open-Meteo S3 grids    │  API   │  │  latest/*.geojson.gz   │  │
+│  3. Open-Meteo S3 (M2)    │  API   │  │  latest/*.geojson.gz   │  │
 │     (CAMS AQ + ICON temp)  │  put   │  └───────────┬────────────┘  │
 │                            │        │              │ binding       │
 │  normalize → EAQI → build  │        │  ┌───────────▼────────────┐  │
@@ -77,9 +93,13 @@ same-pollutant readings from nearby stations (within 50 km, needing at least
 sensor. Flagged readings still appear in the station popup with a warning,
 but are excluded from the station's EAQI color and from region aggregates.
 The inverse also holds: a station with a genuinely severe unflagged reading
-that is corroborated by a neighboring station — or comes from an official
-reference monitor — is marked with a prominent **hotspot** ring, so real
-pollution epicenters stay visible even at choropleth zooms.
+(EAQI band ≥ 4) that is corroborated by a neighboring station — or comes from
+an official reference monitor — is promoted to a **hotspot**. Its ring
+renders in the Air Quality view only, and only where it adds information: at
+choropleth zooms a ring appears when the station's band *exceeds* the band of
+the region it sits in (stations in uncolored regions always show theirs), so
+real epicenters stay visible without restating what the region color already
+says. Details in [docs/frontend.md](docs/frontend.md).
 
 ## Monorepo layout
 
@@ -163,10 +183,12 @@ Nothing below asks for billing details.
 
 KV free-plan headroom (limits per
 [Cloudflare's KV docs](https://developers.cloudflare.com/kv/platform/limits/)):
-the hourly ingest writes 5 keys × 24 runs ≈ **120 writes/day of the 1,000/day
-cap**; the artifacts total **~0.42 MB gz of the 1 GB storage cap** (largest
-single value ~398 KB vs the 25 MiB/value cap); API reads draw on 100k KV
-reads/day, matching the Worker's own 100k req/day. If a cap is ever exceeded,
+the hourly ingest writes 3 keys × 24 runs plus a roughly daily OpenAQ
+registry write ≈ **73 writes/day of the 1,000/day cap** (rising to ~120 once
+the two M2 layer keys ship); the artifacts total **~0.43 MB gz of the 1 GB
+storage cap** (largest single value ~410 KB vs the 25 MiB/value cap; measured
+2026-07-21); API reads draw on 100k KV reads/day, matching the Worker's own
+100k req/day. If a cap is ever exceeded,
 the behavior is failed requests for the rest of the UTC day — the Worker
 carries forward and serves the last stored (stale) artifacts, and there is
 never a surprise bill, because no billing is configured.

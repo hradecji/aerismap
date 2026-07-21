@@ -73,12 +73,10 @@ interface PreparedRegion {
 export interface BoundaryIndex {
   regions: PreparedRegion[]
   /**
-   * Distinct NUTS-3 ids + their distinct NUTS-2 prefixes = meta.counts
-   * .areasTotal. Note this is 1,861 for the vendored set while the published
-   * boundary GeoJSONs hold 1,864 features: Bosnia's BA01–BA03 exist at
-   * NUTS-2 but have no NUTS-3 subdivision in GISCO 2024, so no station can
-   * ever roll up into them — they are not part of the aggregation universe
-   * and render as no-data.
+   * Distinct region ids across both levels = meta.counts.areasTotal (1,864
+   * for the vendored set). Bosnia's NUTS-2 units are spliced into the
+   * assignment set (no NUTS-3 subdivision exists in GISCO 2024), so they
+   * appear at both levels but are counted once.
    */
   totalRegions: number
   nuts3Count: number

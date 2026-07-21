@@ -14,7 +14,11 @@ const FRESHNESS_WINDOW_SEC = 6 * 3600
 const MAX_FUTURE_SKEW_MS = 10 * 60 * 1000
 /** A single OpenAQ page beyond this is upstream misbehaviour, not data. */
 const MAX_PAGE_BYTES = 8 * 1024 * 1024
-/** Below this the fetch "worked" but the data is implausible (normal ≈ 3.5–4.5k stations). */
+/**
+ * Below this the fetch "worked" but the data is implausible. Registry holds
+ * ~4k+ European monitor locations; ~2.5k report within the 6 h freshness
+ * window on a typical run (observed 2026-07-21).
+ */
 const MIN_PLAUSIBLE_STATIONS = 100
 /** Persisted /locations registry object (Cloudflare KV when configured, else the local out dir). */
 export const OPENAQ_REGISTRY_KEY = 'internal/openaq-registry.json'
@@ -363,7 +367,7 @@ export async function fetchOpenaq(options: OpenaqOptions = {}): Promise<SourceRe
         status: {
           id: 'openaq',
           ok: false,
-          detail: `implausibly low yield: ${stations.length} stations < floor ${minStations} (normal ≈ 3.5–4.5k) — not publishing this source`,
+          detail: `implausibly low yield: ${stations.length} stations < floor ${minStations} (normal ≈ 2.5k fresh) — not publishing this source`,
         },
         stations: [],
       }
