@@ -5,6 +5,9 @@ import {
   type AreaStats,
 } from '@aerismap/shared'
 import { areaBandSummary, areaConfidenceLabel, BOUNDARY_NOTICE } from '../lib/areas'
+
+/** Gas pollutants community sensors cannot measure — drives the PM-only disclosure. */
+const GAS_PARAMS = ['no2', 'o3', 'so2'] as const
 import { PARAM_LABELS, PARAM_UNITS, formatValue } from '../lib/format'
 
 interface AreaPopupProps {
@@ -45,6 +48,12 @@ export default function AreaPopup({ nutsId, name, level, stats }: AreaPopupProps
           {summary.pollutant ? (
             <span className="popupBadgeSub"> (driven by {PARAM_LABELS[summary.pollutant]})</span>
           ) : null}
+        </div>
+      )}
+      {summary.kind === 'band' && !GAS_PARAMS.some((p) => (cnt[p] ?? 0) > 0) && (
+        <div className="popupNote">
+          PM only — no station here measures gas pollutants (O₃, NO₂, SO₂), so summer ozone
+          episodes are invisible until official stations are ingested.
         </div>
       )}
       {summary.kind === 'too-few-stations' && (
