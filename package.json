@@ -1,5 +1,5 @@
 {
-  "name": "aerismap",
+  "name": "aeris",
   "private": true,
   "engines": {
     "node": ">=22"
